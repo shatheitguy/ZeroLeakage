@@ -220,6 +220,48 @@
         <Setter Property="ctl:Ui.CornerRadius" Value="8" />
     </Style>
 
+    <!-- Row in a flyout menu (profile menu): full-width, transparent until hovered -->
+    <Style x:Key="Button.MenuItem" TargetType="Button" BasedOn="{StaticResource Button.Base}">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}" />
+        <Setter Property="FontWeight" Value="Normal" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Padding" Value="10,8" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="ctl:Ui.CornerRadius" Value="9" />
+    </Style>
+
+    <!-- Round avatar toggle at the bottom of the left rail -->
+    <Style x:Key="Toggle.Avatar" TargetType="ToggleButton">
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Focusable" Value="True" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusVisual}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Grid Background="Transparent">
+                        <Ellipse x:Name="Face" Margin="5" Fill="{StaticResource Brush.SurfaceRaised}"
+                                 Stroke="{StaticResource Brush.BorderStrong}" StrokeThickness="1" />
+                        <Ellipse x:Name="Wash" Margin="5" Fill="#FFFFFFFF" Opacity="0" />
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Wash" Property="Opacity" Value="0.06" />
+                            <Setter TargetName="Face" Property="Stroke" Value="{DynamicResource Brush.ModeAccentSoft}" />
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Face" Property="Fill" Value="{DynamicResource Brush.ModeAccentSoft}" />
+                            <Setter TargetName="Face" Property="Stroke" Value="{DynamicResource Brush.ModeAccent}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- Title-bar caption buttons (46x48, square, Windows-11 sized) -->
     <Style x:Key="Button.Caption" TargetType="Button">
         <Setter Property="Width" Value="46" />

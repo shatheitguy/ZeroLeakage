@@ -76,7 +76,6 @@ public sealed class SimulatedProtectionEngine : IProtectionEngine
     private double _etlMb = 1_236.4;
     private int _rules = 214, _latency = 12;
     private bool _realtime = true;
-    private DateTime? _lastScan = DateTime.Now.AddHours(-6);
     private int _eventsWindow;
     private DateTime _windowStart = DateTime.UtcNow;
     private double _eps;
@@ -123,12 +122,8 @@ public sealed class SimulatedProtectionEngine : IProtectionEngine
         };
         _resolver = _resolvers[0];
 
-        _quarantine = new List<QuarantineItem>
-        {
-            Q("crack_setup.exe", @"C:\Users\Default\Downloads\crack_setup.exe", "Trojan:Win32/Wacatac.B!ml", 4_812_331, -2),
-            Q("invoice_8841.pdf.js", @"C:\Users\Default\Downloads\invoice_8841.pdf.js", "TrojanDownloader:JS/Nemucod", 18_220, -9),
-            Q("svc_host32.dll", @"C:\Users\Default\AppData\Roaming\svc_host32.dll", "Trojan:Win32/CoinMiner", 1_204_002, -21),
-        };
+        // DeepScan is backed by Microsoft Defender (DefenderService); this engine holds no fake detections.
+        _quarantine = new List<QuarantineItem>();
 
         _snapshots = new List<SystemSnapshot>
         {
@@ -139,9 +134,6 @@ public sealed class SimulatedProtectionEngine : IProtectionEngine
 
     private static AppRule App(string name, string path, string? publisher, long blocked, bool wan = true, bool wifi = true, bool lan = true)
         => new() { Name = name, Path = path, Publisher = publisher, IsSigned = publisher is not null, BlockedAttempts = blocked, WanAllowed = wan, WifiAllowed = wifi, LanAllowed = lan };
-
-    private static QuarantineItem Q(string file, string path, string threat, long size, int daysAgo)
-        => new(Guid.NewGuid(), file, path, Hash(file), threat, DateTime.Now.AddDays(daysAgo).AddMinutes(-daysAgo * 37), size);
 
     private static string Hash(string seed) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(seed))).ToLowerInvariant();
 
@@ -245,8 +237,11 @@ public sealed class SimulatedProtectionEngine : IProtectionEngine
             }
             _latency = Math.Clamp(_latency + _rng.Next(-2, 3), 8, 26);
             if (_updateWindowEnds is { } end && DateTime.Now >= end) _updateWindowEnds = null;
-            s = new EngineStats(_telemetryBlocked, _etlMb, _dnsBlocked, _latency, _rules + _filters.TotalRules, _exeBlocked, _realtime,
-                _lastScan, _quarantine.Count, _eps, _updateWindowEnds);
+            // Antivirus figures are real: they come from Microsoft Defender via DefenderService.
+            var av = DefenderService.LastStatus;
+            int detections = DefenderService.LastDetections.Count(d => d.NeedsAction || d.IsQuarantined);
+            s = new EngineStats(_telemetryBlocked, _etlMb, _dnsBlocked, _latency, _rules + _filters.TotalRules, _exeBlocked,
+                av?.RealTimeProtection ?? false, av?.LastScan?.ToLocalTime(), detections, _eps, _updateWindowEnds);
         }
         StatsUpdated?.Invoke(this, s);
     }
@@ -398,34 +393,9 @@ public sealed class SimulatedProtectionEngine : IProtectionEngine
 
     public Task SetRealtimeProtectionAsync(bool enabled) { lock (_gate) _realtime = enabled; return Task.CompletedTask; }
 
-    public async Task<ScanResult> RunScanAsync(ScanKind kind, IProgress<ScanProgress> progress, CancellationToken ct)
-    {
-        string[] roots = kind == ScanKind.Quick
-            ? new[] { @"C:\Windows\System32", @"C:\Users\Default\AppData\Roaming", @"C:\Users\Default\Downloads", @"C:\ProgramData\Microsoft\Windows\Start Menu" }
-            : new[] { @"C:\Windows\System32", @"C:\Windows\SysWOW64", @"C:\Program Files", @"C:\Program Files (x86)", @"C:\Users\Default\AppData", @"C:\Users\Default\Downloads", @"C:\ProgramData" };
-        string[] files = { "kernel32.dll", "ntdll.dll", "svchost.exe", "msedge.dll", "Discord.exe", "update.exe", "libcef.dll", "setup.msi", "d3d12.dll", "vcruntime140.dll", "chrome_elf.dll", "node.dll" };
-
-        int steps = kind == ScanKind.Quick ? 180 : 520;
-        long scanned = 0;
-        int threats = 0;
-        var started = DateTime.Now;
-        for (int i = 1; i <= steps; i++)
-        {
-            ct.ThrowIfCancellationRequested();
-            await Task.Delay(kind == ScanKind.Quick ? 40 : 45, ct);
-            scanned += _rng.Next(40, 260);
-            if (kind == ScanKind.Full && i == steps * 2 / 3)
-            {
-                threats++;
-                var q = Q("free_vpn_installer.exe", @"C:\Users\Default\Downloads\free_vpn_installer.exe", "PUA:Win32/Bundler.AdLoad", 9_120_448, 0);
-                lock (_gate) _quarantine.Insert(0, q);
-            }
-            var path = $@"{roots[_rng.Next(roots.Length)]}\{files[_rng.Next(files.Length)]}";
-            progress.Report(new ScanProgress(i * 100d / steps, path, scanned, threats));
-        }
-        lock (_gate) _lastScan = DateTime.Now;
-        return new ScanResult(kind, scanned, threats, DateTime.Now - started);
-    }
+    /// <summary>Not used by the UI any more: DeepScan talks to Microsoft Defender directly (DefenderService).</summary>
+    public Task<ScanResult> RunScanAsync(ScanKind kind, IProgress<ScanProgress> progress, CancellationToken ct) =>
+        Task.FromException<ScanResult>(new NotSupportedException("DeepScan runs through Microsoft Defender (DefenderService)."));
 
     public IReadOnlyList<QuarantineItem> GetQuarantine() { lock (_gate) return _quarantine.ToList(); }
     public Task RestoreQuarantinedAsync(QuarantineItem item) { lock (_gate) _quarantine.RemoveAll(q => q.Id == item.Id); return Task.CompletedTask; }

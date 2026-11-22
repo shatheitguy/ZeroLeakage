@@ -90,6 +90,44 @@
 
                 <!-- ═════ Preferences ═════ -->
                 <StackPanel Grid.Column="2">
+                    <!-- ═════ App updates ═════ -->
+                    <Border Style="{StaticResource Card}" Margin="0,0,0,14" DataContext="{Binding Updates}">
+                        <StackPanel>
+                            <Grid>
+                                <TextBlock Style="{StaticResource Text.Overline}" FontSize="11" Foreground="{StaticResource Brush.TextPrimary}" Text="APP UPDATES" VerticalAlignment="Center" />
+                                <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center" Style="{StaticResource Text.Mono}" FontSize="10.5"
+                                           Foreground="{StaticResource Brush.TextMuted}"><Run Text="Installed " /><Run Text="{Binding CurrentVersionText, Mode=OneWay}" /></TextBlock>
+                            </Grid>
+                            <Grid Margin="0,12,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock FontSize="13" FontWeight="SemiBold" Text="{Binding StatusText}" TextWrapping="Wrap" />
+                                    <TextBlock Style="{StaticResource Text.Caption}" Text="From the official GitHub releases · no personal data sent" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <Button Grid.Column="1" Margin="10,0,0,0" Style="{StaticResource Button.Outline}" VerticalAlignment="Center"
+                                        Content="Check now" Command="{Binding CheckCommand}" />
+                            </Grid>
+                            <ProgressBar Margin="0,10,0,0" Style="{StaticResource ProgressBar.Thin}" IsIndeterminate="{Binding IsChecking}"
+                                         Value="{Binding DownloadProgress, Mode=OneWay}" Maximum="100"
+                                         Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisible}}" />
+                            <Button Margin="0,12,0,0" HorizontalAlignment="Left" Style="{StaticResource Button.Primary}"
+                                    Content="{Binding InstallText}" Command="{Binding InstallCommand}"
+                                    Visibility="{Binding IsUpdateAvailable, Converter={StaticResource BoolToVisible}}" />
+                            <Grid Margin="0,14,0,0">
+                                <StackPanel>
+                                    <TextBlock FontSize="13" FontWeight="SemiBold" Text="Check automatically" />
+                                    <TextBlock Style="{StaticResource Text.Caption}" Text="Once a day in the background" />
+                                </StackPanel>
+                                <ToggleButton HorizontalAlignment="Right" Style="{StaticResource Toggle.Switch}" IsChecked="{Binding AutoCheck}" />
+                            </Grid>
+                            <Button Margin="0,12,0,0" HorizontalAlignment="Left" Style="{StaticResource Button.Chip}" Content="About ZeroLeakage"
+                                    Command="{Binding DataContext.OpenAboutCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+                        </StackPanel>
+                    </Border>
+
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
                             <TextBlock Style="{StaticResource Text.Overline}" FontSize="11" Foreground="{StaticResource Brush.TextPrimary}" Text="UPDATE WINDOW" />

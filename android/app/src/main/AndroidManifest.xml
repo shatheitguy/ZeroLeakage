@@ -7,6 +7,17 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Short confirmation buzz when you tap Allow / Block (also from notifications). -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Privacy X-ray lists every installed app that can read your screen, notifications, keyboard, mic, camera...
+         (sideloaded app; this permission is restricted on Google Play). -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        xmlns:tools="http://schemas.android.com/tools" tools:ignore="QueryAllPackagesPermission" />
+    <!-- Lite mode (no VPN): lets ZeroLeakage switch Android's Private DNS for you, but ONLY if you grant it
+         yourself over USB: `adb shell pm grant app.zeroleakage.mobile android.permission.WRITE_SECURE_SETTINGS`.
+         Without that grant, Lite mode copies the hostname and opens the Private DNS screen instead. -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
+        xmlns:tools="http://schemas.android.com/tools" tools:ignore="ProtectedPermissions" />
 
     <!-- Lets the firewall list every launchable app without QUERY_ALL_PACKAGES. -->
     <queries>

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
@@ -45,6 +46,8 @@ public sealed class MainViewModel : ObservableObject
         Firewall = new FirewallViewModel(this, engine);
         Dns = new DnsTelemetryViewModel(this, engine);
         DeepScan = new DeepScanViewModel(this, engine);
+        Updates = new UpdatesViewModel(this, settings);
+        About = new AboutViewModel(this, Updates);
         Settings = new SettingsViewModel(this, engine, settings);
         Wizard = new AuditWizardViewModel(this, engine, settings);
 
@@ -67,11 +70,29 @@ public sealed class MainViewModel : ObservableObject
         ToggleUpdateWindowCommand = new AsyncRelayCommand(ToggleUpdateWindowAsync);
         RestoreDefaultsCommand = new RelayCommand(() => RequestConfirm(
             "Restore defaults?",
-            "Removes every ZeroLeakage_Core firewall rule, custom DNS block and app kill-switch, and returns to Mode 1: Balanced Shield. Snapshots and the quarantine vault are kept.",
+            "Removes every ZeroLeakage_Core firewall rule, custom DNS block and app kill-switch, and returns to Mode 1: Balanced Shield. Snapshots and Microsoft Defender quarantine are kept.",
             "Restore defaults", true, RestoreDefaultsAsync));
         ConfirmAcceptCommand = new AsyncRelayCommand(AcceptConfirmAsync);
         ConfirmCancelCommand = new RelayCommand(() => Confirm = null);
         DismissSnackbarCommand = new RelayCommand(() => Snackbar = null);
+
+        // Profile menu (bottom of the left rail)
+        OpenSettingsCommand = new RelayCommand(() => { IsProfileMenuOpen = false; SelectedNav = NavItems[^1]; });
+        OpenAboutCommand = new RelayCommand(() => { IsProfileMenuOpen = false; About.IsOpen = true; });
+        CheckForUpdatesCommand = new RelayCommand(() =>
+        {
+            IsProfileMenuOpen = false;
+            About.IsOpen = true;   // the About card shows the result and the install button
+            if (Updates.CheckCommand.CanExecute(null)) Updates.CheckCommand.Execute(null);
+        });
+        UpdateDefinitionsCommand = new RelayCommand(() =>
+        {
+            IsProfileMenuOpen = false;
+            SelectedNav = NavItems.First(n => n.Page == DeepScan);
+            if (DeepScan.UpdateDefinitionsCommand.CanExecute(null)) DeepScan.UpdateDefinitionsCommand.Execute(null);
+        });
+        ExitCommand = new RelayCommand(() => { IsProfileMenuOpen = false; RequestExit(); });
+        Updates.UpdateAvailabilityChanged += (_, _) => OnPropertyChanged(nameof(HasUpdateBadge));
 
         _clock = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _clock.Tick += (_, _) => TickUpdateWindow();
@@ -88,7 +109,24 @@ public sealed class MainViewModel : ObservableObject
     public DeepScanViewModel DeepScan { get; }
     public SettingsViewModel Settings { get; }
     public AuditWizardViewModel Wizard { get; }
+    public UpdatesViewModel Updates { get; }
+    public AboutViewModel About { get; }
     public IReadOnlyList<NavItem> NavItems { get; }
+
+    // ───────────── profile menu ─────────────
+    private bool _isProfileMenuOpen;
+    public bool IsProfileMenuOpen { get => _isProfileMenuOpen; set => SetProperty(ref _isProfileMenuOpen, value); }
+    public bool HasUpdateBadge => Updates.IsUpdateAvailable;
+    public string VersionShort => "v" + UpdateService.CurrentVersionText;
+    public ICommand OpenSettingsCommand { get; }
+    public ICommand OpenAboutCommand { get; }
+    public ICommand CheckForUpdatesCommand { get; }
+    public ICommand UpdateDefinitionsCommand { get; }
+    public ICommand ExitCommand { get; }
+
+    /// <summary>Raised when the user asks to quit (profile menu Exit, or the updater handing over to msiexec).</summary>
+    public event Action? ExitRequested;
+    public void RequestExit() => ExitRequested?.Invoke();
 
     public NavItem SelectedNav
     {

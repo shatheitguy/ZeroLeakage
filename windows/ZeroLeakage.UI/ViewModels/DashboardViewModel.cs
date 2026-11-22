@@ -156,8 +156,8 @@ public sealed class DashboardViewModel : ObservableObject
     public string DohLatencyText => $"{_stats.DohLatencyMs} ms";
     public string FirewallRulesText => _stats.FirewallRules.ToString("N0");
     public string ExeBlockedText => _stats.ExeBlocked.ToString("N0");
-    public string AvStatusText => _stats.RealtimeProtection ? "ACTIVE" : "PAUSED";
-    public string QuarantineBadge => $"{_stats.QuarantinedCount} QUARANTINED";
+    public string AvStatusText => _stats.RealtimeProtection ? "ACTIVE" : "OFF";
+    public string QuarantineBadge => _stats.QuarantinedCount == 0 ? "DEFENDER · CLEAN" : $"{_stats.QuarantinedCount} DETECTED";
     public string EventsPerSecondText => $"{_stats.EventsPerSecond:0.0} ev/s";
 
     public string LastScanText => _stats.LastScan is not { } t

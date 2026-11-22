@@ -162,17 +162,20 @@ private fun AppRow(app: InstalledApp, rule: AppRule, mode: ProtectionMode) {
             Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (rule.isKilled) Badge("KILLED", Zl.Crimson)
                 if (rule.approved) Badge("APPROVED", Zl.Violet)
-                else if (mode == ProtectionMode.STRICT && !app.isSystem) Badge("NEEDS APPROVAL", Zl.Amber)
+                else if (mode == ProtectionMode.STRICT) Badge("NEEDS APPROVAL", Zl.Amber)
                 if (rule.blocked > 0) Badge("${formatCount(rule.blocked)} BLOCKED", Zl.TextSecondary)
             }
             NetworkToggle("Wi-Fi", rule.wifi) { v -> ZeroLeakage.updateRule(app.packageName) { it.copy(wifi = v) } }
             Spacer(Modifier.width(8.dp))
             NetworkToggle("Mobile", rule.mobile) { v -> ZeroLeakage.updateRule(app.packageName) { it.copy(mobile = v) } }
         }
-        if (mode == ProtectionMode.STRICT && !app.isSystem) {
+        // Every app in this list can be opened, so in Strict Guard each one (even preinstalled Chrome) needs approval.
+        if (mode == ProtectionMode.STRICT) {
             Spacer(Modifier.height(8.dp))
             SmallAction(if (rule.approved) "Revoke approval" else "Approve app", if (rule.approved) Zl.TextSecondary else Zl.Violet) {
-                ZeroLeakage.updateRule(app.packageName) { it.copy(approved = !it.approved) }
+                val approve = !rule.approved
+                ZeroLeakage.updateRule(app.packageName) { it.copy(approved = approve) }
+                ZeroLeakage.say(if (approve) "${app.label} approved. It can connect now." else "${app.label} needs approval again")
             }
         }
     }

@@ -2,7 +2,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ctl="clr-namespace:ZeroLeakage.UI.Controls"
-             xmlns:m="clr-namespace:ZeroLeakage.UI.Models">
+             xmlns:svc="clr-namespace:ZeroLeakage.UI.Services">
     <Grid Margin="8,10,24,22">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -12,8 +12,8 @@
 
         <StackPanel>
             <TextBlock Style="{StaticResource Text.Title}" Text="DeepScan AV" />
-            <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Body}"
-                       Text="Signature + heuristic engine with a real-time shield. Anything suspicious is sealed inside an AES-256 encrypted vault — it can never execute." />
+            <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Body}" TextWrapping="Wrap"
+                       Text="Powered by Microsoft Defender, the antivirus engine built into Windows. Every scan, detection and quarantine shown here comes straight from Defender." />
         </StackPanel>
 
         <Grid Grid.Row="2">
@@ -36,15 +36,21 @@
 
                     <Grid>
                         <StackPanel>
-                            <TextBlock FontSize="13" FontWeight="SemiBold" Text="Real-time shield" />
-                            <TextBlock Style="{StaticResource Text.Caption}" Text="Scans every file on open, write and execute" />
+                            <TextBlock FontSize="13" FontWeight="SemiBold" Text="Real-time protection" />
+                            <TextBlock Style="{StaticResource Text.Caption}" Text="Managed by Microsoft Defender" />
                         </StackPanel>
-                        <ToggleButton HorizontalAlignment="Right" Style="{StaticResource Toggle.Switch}" IsChecked="{Binding RealtimeEnabled}" />
+                        <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Border Style="{StaticResource Badge}" Margin="0,0,8,0">
+                                <TextBlock Style="{StaticResource Badge.Text}" Text="{Binding RealtimeText}" />
+                            </Border>
+                            <Button Style="{StaticResource Button.Chip}" Content="Manage" Command="{Binding OpenRealtimeSettingsCommand}"
+                                    ToolTip="Open Windows Security → Virus &amp; threat protection settings" />
+                        </StackPanel>
                     </Grid>
 
-                    <Grid Grid.Row="1" Width="210" Height="210" Margin="0,18" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Grid Grid.Row="1" Width="210" Height="210" Margin="0,12" HorizontalAlignment="Center" VerticalAlignment="Center">
                         <Ellipse Fill="{DynamicResource Brush.ModeAccentFaint}" Margin="14" />
-                        <ctl:ProgressRing Thickness="10" Value="{Binding Progress}" Stroke="{StaticResource Brush.Mint}" />
+                        <ctl:ProgressRing Thickness="10" Value="100" IsIndeterminate="{Binding IsScanning}" Stroke="{StaticResource Brush.Mint}" />
                         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                             <TextBlock HorizontalAlignment="Center" Style="{StaticResource Text.Metric}" FontSize="40" Text="{Binding ProgressText}" />
                             <TextBlock HorizontalAlignment="Center" Style="{StaticResource Text.Overline}" Text="{Binding ScanKindText}" />
@@ -53,22 +59,64 @@
 
                     <StackPanel Grid.Row="2">
                         <TextBlock HorizontalAlignment="Center" FontSize="13" FontWeight="SemiBold" Text="{Binding StatusText}" TextAlignment="Center" TextWrapping="Wrap" />
-                        <TextBlock Margin="0,4,0,0" HorizontalAlignment="Center" Style="{StaticResource Text.Mono}" FontSize="10.5"
-                                   Foreground="{StaticResource Brush.TextMuted}" Text="{Binding CurrentPath}" TextTrimming="CharacterEllipsis" />
+                        <!-- Antivirus definitions (Microsoft Defender security intelligence) -->
+                        <Border Style="{StaticResource Card.Inset}" Margin="0,14,0,0" Padding="12,9">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid Width="30" Height="30">
+                                        <Border CornerRadius="9" Background="{StaticResource Brush.VioletSoft}" />
+                                        <TextBlock Style="{StaticResource Text.Icon}" FontSize="13" Text="&#xE83D;" Foreground="{StaticResource Brush.Violet}" />
+                                    </Grid>
+                                    <StackPanel Grid.Column="1" Margin="10,0" VerticalAlignment="Center">
+                                        <TextBlock Style="{StaticResource Text.Mono}" FontSize="11.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis">
+                                            <Run Text="Definitions " Foreground="{StaticResource Brush.TextSecondary}" /><Run Text="{Binding SignatureVersionText, Mode=OneWay}" />
+                                        </TextBlock>
+                                        <TextBlock FontSize="11" TextTrimming="CharacterEllipsis" Text="{Binding SignatureAgeText}" ToolTip="{Binding SignatureText}">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding SignaturesStale}" Value="True">
+                                                            <Setter Property="Foreground" Value="{StaticResource Brush.Amber}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </StackPanel>
+                                    <Button Grid.Column="2" Style="{StaticResource Button.Chip}" VerticalAlignment="Center"
+                                            Command="{Binding UpdateDefinitionsCommand}"
+                                            ToolTip="Download the latest Microsoft Defender security intelligence now">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Style="{StaticResource Text.Icon}" FontSize="10.5" Text="&#xE896;" Foreground="{StaticResource Brush.TextSecondary}" />
+                                            <TextBlock Margin="6,0,0,0" Text="Update definitions" />
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+                                <ProgressBar Margin="0,9,0,0" Style="{StaticResource ProgressBar.Thin}" IsIndeterminate="{Binding IsUpdatingDefinitions}"
+                                             Visibility="{Binding IsUpdatingDefinitions, Converter={StaticResource BoolToVisible}}" />
+                                <TextBlock Margin="40,6,0,0" Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Text="{Binding DefinitionsStatus}"
+                                           Visibility="{Binding DefinitionsStatus, Converter={StaticResource NotNullToVisible}}" />
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
 
                     <UniformGrid Grid.Row="3" Columns="2" Margin="0,16,0,0">
                         <Border Style="{StaticResource Card.Inset}" Margin="0,0,6,0">
                             <StackPanel>
-                                <TextBlock Style="{StaticResource Text.Overline}" Text="FILES SCANNED" />
-                                <TextBlock Style="{StaticResource Text.Mono}" FontSize="18" FontWeight="SemiBold" Text="{Binding FilesScannedText}" />
+                                <TextBlock Style="{StaticResource Text.Overline}" Text="LAST SCAN" />
+                                <TextBlock Style="{StaticResource Text.Mono}" FontSize="13" FontWeight="SemiBold" Text="{Binding LastScanText}" TextTrimming="CharacterEllipsis" />
                             </StackPanel>
                         </Border>
                         <Border Style="{StaticResource Card.Inset}" Margin="6,0,0,0">
                             <StackPanel>
-                                <TextBlock Style="{StaticResource Text.Overline}" Text="THREATS FOUND" />
+                                <TextBlock Style="{StaticResource Text.Overline}" Text="ACTIVE THREATS" />
                                 <TextBlock Style="{StaticResource Text.Mono}" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource Brush.Crimson}"
-                                           Text="{Binding ThreatsFound}" />
+                                           Text="{Binding ActiveThreats}" />
                             </StackPanel>
                         </Border>
                     </UniformGrid>
@@ -86,7 +134,7 @@
                 </Grid>
             </Border>
 
-            <!-- ═════ Encrypted quarantine vault ═════ -->
+            <!-- ═════ Defender threat history ═════ -->
             <Border Grid.Column="2" Style="{StaticResource Card}" Padding="16,14,8,10">
                 <Grid>
                     <Grid.RowDefinitions>
@@ -94,27 +142,31 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
                     <Grid Margin="2,0,8,12">
-                        <StackPanel Orientation="Horizontal">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                             <TextBlock Style="{StaticResource Text.Icon}" FontSize="14" Text="&#xE72E;" Foreground="{StaticResource Brush.Violet}" />
                             <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Style="{StaticResource Text.Overline}" FontSize="11"
-                                       Foreground="{StaticResource Brush.TextPrimary}" Text="ENCRYPTED QUARANTINE VAULT" />
+                                       Foreground="{StaticResource Brush.TextPrimary}" Text="THREAT HISTORY" />
                         </StackPanel>
-                        <Border HorizontalAlignment="Right" Style="{StaticResource Badge}" Background="{StaticResource Brush.VioletSoft}" BorderBrush="{StaticResource Brush.VioletLine}">
-                            <TextBlock Style="{StaticResource Badge.Text}" Foreground="{StaticResource Brush.Violet}" Text="AES-256-GCM" />
-                        </Border>
+                        <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                            <Button Style="{StaticResource Button.Chip.Danger}" Content="Remove active threats" Margin="0,0,6,0"
+                                    Command="{Binding RemoveThreatsCommand}"
+                                    Visibility="{Binding HasActiveThreats, Converter={StaticResource BoolToVisible}}" />
+                            <Button Style="{StaticResource Button.Chip}" Content="Refresh" Margin="0,0,6,0" Command="{Binding RefreshCommand}" />
+                            <Button Style="{StaticResource Button.Chip}" Content="Windows Security" Command="{Binding OpenSecurityCommand}" />
+                        </StackPanel>
                     </Grid>
 
                     <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center"
-                                Visibility="{Binding Quarantine.Count, Converter={StaticResource ZeroToVisible}}">
+                                Visibility="{Binding Detections.Count, Converter={StaticResource ZeroToVisible}}">
                         <TextBlock HorizontalAlignment="Center" Style="{StaticResource Text.Icon}" FontSize="34" Text="&#xE73E;" Foreground="{StaticResource Brush.Mint}" />
-                        <TextBlock Margin="0,10,0,0" HorizontalAlignment="Center" Style="{StaticResource Text.Subtitle}" Text="Vault is empty" />
-                        <TextBlock HorizontalAlignment="Center" Style="{StaticResource Text.Caption}" Text="No threats are being held." />
+                        <TextBlock Margin="0,10,0,0" HorizontalAlignment="Center" Style="{StaticResource Text.Subtitle}" Text="No threats detected" />
+                        <TextBlock HorizontalAlignment="Center" Style="{StaticResource Text.Caption}" Text="Microsoft Defender has no detections on this PC." />
                     </StackPanel>
 
-                    <ListBox Grid.Row="1" Style="{StaticResource ListBox.Clean}" ItemsSource="{Binding Quarantine}"
+                    <ListBox Grid.Row="1" Style="{StaticResource ListBox.Clean}" ItemsSource="{Binding Detections}"
                              ItemContainerStyle="{StaticResource ListBoxItem.Row}">
                         <ListBox.ItemTemplate>
-                            <DataTemplate DataType="{x:Type m:QuarantineItem}">
+                            <DataTemplate DataType="{x:Type svc:DefenderDetection}">
                                 <Border Margin="0,0,0,6" Padding="12,10" CornerRadius="12" BorderThickness="1"
                                         Background="{StaticResource Brush.Inset}" BorderBrush="{StaticResource Brush.Border}">
                                     <Grid>
@@ -130,23 +182,20 @@
                                         <StackPanel Grid.Column="1" Margin="12,0">
                                             <TextBlock Style="{StaticResource Text.Mono}" FontWeight="Bold" Foreground="{StaticResource Brush.Crimson}"
                                                        Text="{Binding ThreatName}" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Margin="0,2,0,0" FontSize="12.5" FontWeight="SemiBold" Text="{Binding FileName}" />
+                                            <TextBlock Margin="0,2,0,0" FontSize="12.5" FontWeight="SemiBold" Text="{Binding FileName}" TextTrimming="CharacterEllipsis" />
                                             <TextBlock Style="{StaticResource Text.Mono}" FontSize="10.5" Foreground="{StaticResource Brush.TextMuted}"
-                                                       Text="{Binding OriginalPath}" TextTrimming="CharacterEllipsis" ToolTip="{Binding OriginalPath}" />
-                                            <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Mono}" FontSize="10.5" Foreground="{StaticResource Brush.TextSecondary}"
-                                                       ToolTip="{Binding Sha256}">
-                                                <Run Text="SHA-256 " Foreground="{StaticResource Brush.TextMuted}" /><Run Text="{Binding ShortHash, Mode=OneWay}" />
-                                                <Run Text=" · " Foreground="{StaticResource Brush.TextMuted}" /><Run Text="{Binding SizeText, Mode=OneWay}" />
+                                                       Text="{Binding PrimaryResource}" TextTrimming="CharacterEllipsis" ToolTip="{Binding PrimaryResource}" />
+                                            <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Mono}" FontSize="10.5" Foreground="{StaticResource Brush.TextSecondary}">
+                                                <Run Text="{Binding StatusText, Mode=OneWay}" Foreground="{StaticResource Brush.TextPrimary}" />
+                                                <Run Text=" · " Foreground="{StaticResource Brush.TextMuted}" /><Run Text="{Binding SeverityText, Mode=OneWay}" />
                                                 <Run Text=" · " Foreground="{StaticResource Brush.TextMuted}" /><Run Text="{Binding DateText, Mode=OneWay}" />
                                             </TextBlock>
                                         </StackPanel>
                                         <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                                            <Button Style="{StaticResource Button.Chip}" Content="Restore" Margin="0,0,0,6"
+                                            <Button Style="{StaticResource Button.Chip}" Content="Restore"
                                                     Command="{Binding DataContext.RestoreItemCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                                    CommandParameter="{Binding}" />
-                                            <Button Style="{StaticResource Button.Chip.Danger}" Content="Delete"
-                                                    Command="{Binding DataContext.DeleteItemCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                                    CommandParameter="{Binding}" />
+                                                    CommandParameter="{Binding}"
+                                                    Visibility="{Binding IsQuarantined, Converter={StaticResource BoolToVisible}}" />
                                         </StackPanel>
                                     </Grid>
                                 </Border>

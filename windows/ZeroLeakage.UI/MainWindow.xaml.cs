@@ -1,6 +1,8 @@
 using System;
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using ZeroLeakage.UI.Interop;
@@ -28,7 +30,28 @@ public partial class MainWindow : Window
         StateChanged += (_, _) => SyncMaximizedState();
         Loaded += (_, _) => StartStatusPulse();
         RootBorder.RenderTransformOrigin = new Point(0.5, 0.5);
+
+        // Profile menu opens to the right of the avatar, bottom edges aligned (the popup has a 16px shadow margin).
+        ProfilePopup.CustomPopupPlacementCallback = (popupSize, targetSize, _) =>
+        {
+            var dpi = VisualTreeHelper.GetDpi(this);
+            double m = 16;
+            return new[]
+            {
+                new CustomPopupPlacement(new Point(targetSize.Width + (10 - m) * dpi.DpiScaleX,
+                                                   targetSize.Height - popupSize.Height + m * dpi.DpiScaleY), PopupPrimaryAxis.Horizontal),
+            };
+        };
+        PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key != Key.Escape) return;
+            if (viewModel.IsProfileMenuOpen) { viewModel.IsProfileMenuOpen = false; e.Handled = true; }
+            else if (viewModel.About.IsOpen && viewModel.Confirm is null) { viewModel.About.IsOpen = false; e.Handled = true; }
+        };
     }
+
+    /// <summary>True while the profile flyout is actually on screen (used by --selftest).</summary>
+    public bool IsProfileMenuShown => ProfilePopup.IsOpen && ProfilePopup.Child is FrameworkElement { IsVisible: true };
 
     private void StartStatusPulse()
     {

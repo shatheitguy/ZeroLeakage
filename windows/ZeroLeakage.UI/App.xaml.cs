@@ -46,6 +46,8 @@ public partial class App : Application
         }
 
         DispatcherUnhandledException += OnUnhandledException;
+        // Errors inside async commands are shown as a snackbar; also log + count them so --selftest catches them.
+        ZeroLeakage.UI.Mvvm.AsyncRelayCommand.UnhandledError += ex => LogError(ex);
         // Sign-out, shutdown, or an installer asking us to close (Restart Manager): exit for real, don't hide.
         SessionEnding += (_, _) => ExitApplication();
 
@@ -70,6 +72,7 @@ public partial class App : Application
         _tray = new TrayIconService(_window, shell, ExitApplication);
         _toasts = new ConnectToastService(_engine, Dispatcher);
         _window.ExitRequested += ExitApplication;
+        shell.ExitRequested += ExitApplication;   // profile menu Exit, or the updater handing over to msiexec
         _window.HiddenToTray += () =>
         {
             if (settings.TrayHintShown || selfTest) return;
@@ -81,6 +84,8 @@ public partial class App : Application
 
         _engine.Start();
         _ = Filters.StartAsync();
+        DefenderService.StartBackgroundRefresh();
+        if (!selfTest) shell.Updates.StartAutoCheck();
 
         if (!settings.WizardCompleted) shell.Wizard.Open();
 
@@ -123,7 +128,23 @@ public partial class App : Application
         shell.Mode = Models.ProtectionMode.StrictGuard;     // let an Ask-to-Connect toast appear
         shell.ToggleUpdateWindowCommand.Execute(null);
         shell.Dns.WipeLogsCommand.Execute(null);
-        shell.DeepScan.QuickScanCommand.Execute(null);
+        shell.DeepScan.RefreshCommand.Execute(null);   // real Defender status + history (no scan in the self-test)
+        await Wait(6000);
+        File.AppendAllText(Path.Combine(UiSettingsStore.Directory, "ui-selftest.log"),
+            $"[{DateTime.Now:O}] deepscan available={shell.DeepScan.DefenderAvailable} realtime={shell.DeepScan.RealtimeText} " +
+            $"sigs='{shell.DeepScan.SignatureText}' lastScan='{shell.DeepScan.LastScanText}' detections={shell.DeepScan.Detections.Count} " +
+            $"status='{shell.DeepScan.StatusText}'{Environment.NewLine}");
+        if (Environment.GetEnvironmentVariable("ZL_SELFTEST_SCAN") == "1")
+        {
+            // Opt-in: a real Microsoft Defender quick scan through the DeepScan page (takes a few minutes).
+            shell.DeepScan.QuickScanCommand.Execute(null);
+            await Wait(2000);
+            var scanDeadline = DateTime.Now.AddMinutes(15);
+            while (shell.DeepScan.IsScanning && DateTime.Now < scanDeadline) await Wait(2000);
+            File.AppendAllText(Path.Combine(UiSettingsStore.Directory, "ui-selftest.log"),
+                $"[{DateTime.Now:O}] deepscan-scan finished={!shell.DeepScan.IsScanning} found={shell.DeepScan.ThreatsFound} " +
+                $"status='{shell.DeepScan.StatusText}' lastScan='{shell.DeepScan.LastScanText}'{Environment.NewLine}");
+        }
         await Wait(12000);
         shell.Mode = Models.ProtectionMode.Balanced;
 
@@ -144,6 +165,35 @@ public partial class App : Application
             $"dnssecInspector=\"{inspectorVm.DnssecText}\" answers={string.Join(" | ", inspectorVm.Answers.Select(a => $"{a.Type} {a.Data} {a.Location}"))}{Environment.NewLine}");
         inspector.Close();
         shell.Dns.Tab = 0;
+
+        // Profile menu, About and the GitHub update check (network; never downloads or installs in the self-test).
+        var log = Path.Combine(UiSettingsStore.Directory, "ui-selftest.log");
+        shell.IsProfileMenuOpen = true;
+        await Wait(900);
+        bool menuShown = _window!.IsProfileMenuShown;
+        shell.OpenAboutCommand.Execute(null);
+        await Wait(700);
+        bool menuClosed = !shell.IsProfileMenuOpen, aboutOpen = shell.About.IsOpen;
+        var update = await shell.Updates.CheckAsync(userInitiated: true);
+        await Wait(800);
+        _ = shell.About.DetailsText;
+        shell.About.CloseCommand.Execute(null);
+        await Wait(500);
+        File.AppendAllText(log,
+            $"[{DateTime.Now:O}] profile menuShown={menuShown} menuClosedOnSelect={menuClosed} aboutOpened={aboutOpen} aboutClosed={!shell.About.IsOpen} " +
+            $"version={UpdateService.CurrentVersionText} details=\"{string.Join(" | ", shell.About.Details.Select(d => $"{d.Label}={d.Value}"))}\"{Environment.NewLine}");
+        File.AppendAllText(log,
+            $"[{DateTime.Now:O}] update state={update.State} latest={update.Tag ?? "-"} asset={update.AssetName ?? "-"} size={update.AssetSize} " +
+            $"status=\"{shell.Updates.StatusText}\" badge={shell.HasUpdateBadge} error=\"{update.Error}\"{Environment.NewLine}");
+        shell.SelectedNav = shell.NavItems[^1];             // Settings page with the App updates card
+        await Wait(900);
+        shell.SelectedNav = shell.NavItems.First(n => n.Page == shell.DeepScan);
+        await Wait(900);
+        File.AppendAllText(log,
+            $"[{DateTime.Now:O}] definitions version='{shell.DeepScan.SignatureVersionText}' age='{shell.DeepScan.SignatureAgeText}' " +
+            $"canUpdate={shell.DeepScan.UpdateDefinitionsCommand.CanExecute(null)} (not run in self-test){Environment.NewLine}");
+        shell.SelectedNav = shell.NavItems[0];
+        if (!menuShown || !aboutOpen || shell.About.IsOpen) Interlocked.Increment(ref _errorCount);
 
         settings = UiSettingsStore.Load();
         settings.WizardCompleted = wizardWasDone;
@@ -189,6 +239,18 @@ public partial class App : Application
         _engine?.Dispose();
         _singleInstance?.ReleaseMutex();
         Shutdown();
+    }
+
+    private void LogError(Exception ex)
+    {
+        try
+        {
+            Directory.CreateDirectory(UiSettingsStore.Directory);
+            File.AppendAllText(Path.Combine(UiSettingsStore.Directory, "ui-errors.log"),
+                $"[{DateTime.Now:O}] {ex}{Environment.NewLine}{Environment.NewLine}");
+        }
+        catch { /* logging must never crash the shield UI */ }
+        Interlocked.Increment(ref _errorCount);
     }
 
     private void OnUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)

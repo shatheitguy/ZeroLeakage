@@ -16,6 +16,9 @@ public sealed class UiSettings
     public bool TrayHintShown { get; set; }
     public bool AutoUpdateDefinitions { get; set; } = true;
     public int UpdateWindowMinutes { get; set; } = 15;
+    /// <summary>Look for a newer ZeroLeakage release on GitHub once a day.</summary>
+    public bool AutoCheckUpdates { get; set; } = true;
+    public DateTime? LastUpdateCheck { get; set; }
     public ProtectionMode Mode { get; set; } = ProtectionMode.Balanced;
 }
 

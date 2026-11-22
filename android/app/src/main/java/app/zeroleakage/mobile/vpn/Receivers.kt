@@ -8,6 +8,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.VpnService
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -53,13 +58,49 @@ object PromptNotifier {
 class PromptActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val pkg = intent.getStringExtra(PromptNotifier.EXTRA_PKG) ?: return
-        when (intent.getStringExtra(PromptNotifier.EXTRA_DECISION)) {
-            "allow" -> ZeroLeakage.updateRule(pkg) { it.copy(approved = true, wifi = true, mobile = true) }
-            "once" -> ZeroLeakage.allowedOnce.add(pkg)
-            "block" -> ZeroLeakage.updateRule(pkg) { it.copy(approved = false, wifi = false, mobile = false) }
+        val label = runCatching {
+            val pm = context.packageManager
+            pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+        }.getOrDefault(pkg)
+        val message = when (intent.getStringExtra(PromptNotifier.EXTRA_DECISION)) {
+            "allow" -> {
+                ZeroLeakage.updateRule(pkg) { it.copy(approved = true, wifi = true, mobile = true) }
+                "$label allowed. It can connect now."
+            }
+            "once" -> {
+                ZeroLeakage.allowOnce(pkg)
+                "$label allowed until the shield restarts"
+            }
+            "block" -> {
+                ZeroLeakage.updateRule(pkg) { it.copy(approved = false, wifi = false, mobile = false) }
+                "$label blocked"
+            }
+            else -> {   // dismissed or timed out: stays blocked, may ask again later
+                ZeroLeakage.pendingPrompts.remove(pkg)
+                null
+            }
         }
-        ZeroLeakage.pendingPrompts.remove(pkg)
         context.getSystemService(NotificationManager::class.java).cancel(PromptNotifier.notificationId(pkg))
+        if (message != null) {
+            Feedback.confirm(context)
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            ZeroLeakage.say(message)
+        }
+    }
+}
+
+/** A short, crisp vibration so a tap on Allow / Block is felt, even from a notification. */
+object Feedback {
+    fun confirm(context: Context) {
+        runCatching {
+            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                context.getSystemService(VibratorManager::class.java).defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                context.getSystemService(Vibrator::class.java)
+            }
+            vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK))
+        }
     }
 }
 

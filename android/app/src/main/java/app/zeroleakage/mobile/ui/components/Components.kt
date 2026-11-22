@@ -241,9 +241,16 @@ fun verdictColor(v: Verdict) = when (v) {
 
 @Composable
 fun ZlSwitch(checked: Boolean, onChange: (Boolean) -> Unit, color: Color = Zl.Mint, enabled: Boolean = true) {
+    val view = androidx.compose.ui.platform.LocalView.current
     Switch(
         checked = checked,
-        onCheckedChange = onChange,
+        onCheckedChange = { v ->
+            view.performHapticFeedback(
+                if (android.os.Build.VERSION.SDK_INT >= 34) android.view.HapticFeedbackConstants.TOGGLE_ON.takeIf { v } ?: android.view.HapticFeedbackConstants.TOGGLE_OFF
+                else android.view.HapticFeedbackConstants.VIRTUAL_KEY,
+            )
+            onChange(v)
+        },
         enabled = enabled,
         colors = SwitchDefaults.colors(
             checkedThumbColor = Zl.Canvas,

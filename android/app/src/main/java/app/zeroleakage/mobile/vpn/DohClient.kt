@@ -34,8 +34,8 @@ class DohClient {
         val started = SystemClock.elapsedRealtime()
         val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
-            connectTimeout = 4_000
-            readTimeout = 4_000
+            connectTimeout = 3_000
+            readTimeout = 3_000
             doOutput = true
             useCaches = false
             setRequestProperty("Content-Type", "application/dns-message")

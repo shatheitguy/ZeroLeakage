@@ -2,7 +2,11 @@ package app.zeroleakage.mobile.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -75,6 +79,54 @@ object ZeroLeakage {
     private val _onboarded = MutableStateFlow(false)
     val onboarded: StateFlow<Boolean> = _onboarded.asStateFlow()
 
+    /** FULL = local VPN shield (per-app firewall, feed). LITE = Android Private DNS only, no VPN. */
+    enum class Method { FULL, LITE }
+    private val _method = MutableStateFlow(Method.FULL)
+    val method: StateFlow<Method> = _method.asStateFlow()
+    private val _liteProvider = MutableStateFlow(PrivateDns.PROVIDERS.first().id)
+    val liteProvider: StateFlow<String> = _liteProvider.asStateFlow()
+
+    fun setMethod(m: Method) {
+        _method.value = m
+        prefs.edit().putString("method", m.name).apply()
+    }
+
+    fun setLiteProvider(id: String) {
+        _liteProvider.value = id
+        prefs.edit().putString("lite_provider", id).apply()
+    }
+
+    fun liteProvider(): PrivateDns.Provider = PrivateDns.PROVIDERS.firstOrNull { it.id == _liteProvider.value } ?: PrivateDns.PROVIDERS.first()
+
+    /** When every encrypted resolver is unreachable, answer through the network's own DNS instead of failing. */
+    private val _fallbackDns = MutableStateFlow(true)
+    val fallbackDns: StateFlow<Boolean> = _fallbackDns.asStateFlow()
+
+    /** Live health of the upstream DNS path, shown as a banner on the dashboard. */
+    data class DnsHealth(val failing: Boolean = false, val fallback: Boolean = false, val error: String? = null,
+                         val via: String? = null, val at: Long = 0)
+    private val _dnsHealth = MutableStateFlow(DnsHealth())
+    val dnsHealth: StateFlow<DnsHealth> = _dnsHealth.asStateFlow()
+
+    /** Short confirmations ("Chrome allowed") shown as a snackbar in the app. */
+    private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    val messages: SharedFlow<String> = _messages.asSharedFlow()
+    fun say(message: String) { _messages.tryEmit(message) }
+
+    /**
+     * Lookups from an app that is waiting on an "Ask to connect" decision are held here (a few seconds)
+     * so that tapping Allow answers them immediately: the page loads without a reload.
+     */
+    private val decisionWaiters = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
+    fun decisionWaiter(pkg: String): CompletableDeferred<Unit> = decisionWaiters.getOrPut(pkg) { CompletableDeferred() }
+    fun releaseDecision(pkg: String) { decisionWaiters.remove(pkg)?.complete(Unit) }
+
+    fun allowOnce(pkg: String) {
+        allowedOnce.add(pkg)
+        pendingPrompts.remove(pkg)
+        releaseDecision(pkg)
+    }
+
     /** Apps the user tapped "Allow once" for — cleared whenever the shield restarts. */
     val allowedOnce: MutableSet<String> = ConcurrentHashMap.newKeySet()
     /** Packages with an "Ask to connect" notification already showing. */
@@ -87,6 +139,9 @@ object ZeroLeakage {
         _customResolverUrl.value = prefs.getString("custom_doh", "") ?: ""
         _dnssec.value = prefs.getBoolean("dnssec", true)
         _dnssecStrict.value = prefs.getBoolean("dnssec_strict", false)
+        _fallbackDns.value = prefs.getBoolean("fallback_dns", true)
+        _method.value = runCatching { Method.valueOf(prefs.getString("method", null) ?: "") }.getOrDefault(Method.FULL)
+        _liteProvider.value = prefs.getString("lite_provider", null) ?: PrivateDns.PROVIDERS.first().id
         _startOnBoot.value = prefs.getBoolean("boot", false)
         _onboarded.value = prefs.getBoolean("onboarded", false)
         _rules.value = decodeRules(prefs.getString("rules", null))
@@ -151,6 +206,19 @@ object ZeroLeakage {
         prefs.edit().putBoolean("dnssec_strict", on).apply()
     }
 
+    fun setFallbackDns(on: Boolean) {
+        _fallbackDns.value = on
+        prefs.edit().putBoolean("fallback_dns", on).apply()
+    }
+
+    fun reportDns(ok: Boolean, fallback: Boolean, error: String?, via: String?) {
+        val next = DnsHealth(failing = !ok, fallback = fallback, error = error, via = via, at = System.currentTimeMillis())
+        val cur = _dnsHealth.value
+        // Only publish changes (or refresh a stale warning) so the UI isn't flooded on every lookup.
+        if (cur.failing != next.failing || cur.fallback != next.fallback || cur.via != next.via ||
+            (!ok || fallback) && next.at - cur.at > 5_000) _dnsHealth.value = next
+    }
+
     fun setStartOnBoot(value: Boolean) {
         _startOnBoot.value = value
         prefs.edit().putBoolean("boot", value).apply()
@@ -186,6 +254,8 @@ object ZeroLeakage {
     fun updateRule(pkg: String, transform: (AppRule) -> AppRule) {
         _rules.update { it + (pkg to transform(it[pkg] ?: AppRule(pkg))) }
         prefs.edit().putString("rules", encodeRules(_rules.value)).apply()
+        pendingPrompts.remove(pkg)
+        releaseDecision(pkg)          // any lookup held for an "Ask to connect" decision re-checks now
     }
 
     private fun encodeRules(rules: Map<String, AppRule>): String = JSONArray().apply {

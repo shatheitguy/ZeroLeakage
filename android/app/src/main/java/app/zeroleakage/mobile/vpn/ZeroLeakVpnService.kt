@@ -25,6 +25,7 @@ import app.zeroleakage.mobile.data.PacketDetail
 import app.zeroleakage.mobile.data.ProtectionMode
 import app.zeroleakage.mobile.data.Verdict
 import app.zeroleakage.mobile.data.ZeroLeakage
+import app.zeroleakage.mobile.filters.FilterIndex
 import app.zeroleakage.mobile.filters.FilterMatch
 import app.zeroleakage.mobile.filters.Filters
 import kotlinx.coroutines.CoroutineScope
@@ -35,6 +36,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import android.content.pm.ApplicationInfo
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.InetAddress
@@ -61,6 +64,8 @@ class ZeroLeakVpnService : VpnService() {
         private const val CHANNEL_SHIELD = "shield"
         const val CHANNEL_PROMPT = "ask_to_connect"
         private const val NOTIF_ID = 1
+        /** How long a lookup waits for your Allow / Block tap before it is refused. */
+        private const val PROMPT_HOLD_MS = 4_500L
 
         fun start(context: Context) {
             ContextCompat.startForegroundService(context, Intent(context, ZeroLeakVpnService::class.java).setAction(ACTION_START))
@@ -84,14 +89,16 @@ class ZeroLeakVpnService : VpnService() {
     @Volatile private var running = false
     private var scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val doh = DohClient()
-    private val labels = ConcurrentHashMap<Int, Pair<String?, String>>()   // uid -> (package, label)
+    private val owners = ConcurrentHashMap<Int, AppInfo>()   // uid -> who owns it
     private lateinit var connectivity: ConnectivityManager
+    private lateinit var upstream: Upstream
     @Volatile private var onWifiCache = true
     @Volatile private var onWifiCheckedAt = 0L
 
     override fun onCreate() {
         super.onCreate()
         connectivity = getSystemService(ConnectivityManager::class.java)
+        upstream = Upstream(doh, connectivity)
         ensureChannels(this)
     }
 
@@ -162,13 +169,16 @@ class ZeroLeakVpnService : VpnService() {
         }, "zl-tun-reader").apply { start() }
     }
 
-    private fun handle(q: DnsQuery, out: FileOutputStream) {
-        val (pkg, label, uid) = attribute(q)
-        val isSystem = uid in 0 until Process.FIRST_APPLICATION_UID
-        val decision = decide(q.name, pkg, isSystem)
+    private suspend fun handle(q: DnsQuery, out: FileOutputStream) {
+        val (pkg, label, uid, isCore) = attribute(q)
+        var decision = decide(q.name, pkg, isCore)
 
-        if (decision.prompt && pkg != null && ZeroLeakage.pendingPrompts.add(pkg)) {
-            PromptNotifier.show(this, pkg, label, q.name)
+        if (decision.prompt && pkg != null) {
+            if (ZeroLeakage.pendingPrompts.add(pkg)) PromptNotifier.show(this, pkg, label, q.name)
+            // Hold the lookup briefly: if you tap Allow in time, the app gets its answer right away
+            // (no error page, no reload). DNS clients wait about 5 s per try, so stay under that.
+            withTimeoutOrNull(PROMPT_HOLD_MS) { ZeroLeakage.decisionWaiter(pkg).await() }
+            decision = decide(q.name, pkg, isCore)
         }
 
         val wantDnssec = ZeroLeakage.dnssec.value
@@ -179,6 +189,7 @@ class ZeroLeakVpnService : VpnService() {
         var latency: Long? = null
         var error: String? = null
         var upstreamInfo: DnsResponseInfo? = null
+        var usedResolver: Upstream.Answer? = null
 
         var response: ByteArray = if (decision.verdict != Verdict.ALLOWED) {
             DnsPacket.errorResponse(q, rcode = 3)
@@ -188,11 +199,14 @@ class ZeroLeakVpnService : VpnService() {
                 cached = true
                 DnsPacket.withId(hit, q.id)
             } else try {
-                val upstream = if (wantDnssec) DnsMessage.withAdBit(q.dns) else q.dns
-                val (bytes, ms) = doh.resolve(resolver.url, q, upstream)
-                ZeroLeakage.recordLatency(ms)
-                latency = ms
-                bytes
+                val message = if (wantDnssec) DnsMessage.withAdBit(q.dns) else q.dns
+                val answer = upstream.resolve(q, message)
+                if (answer.encrypted) ZeroLeakage.recordLatency(answer.latencyMs)
+                latency = answer.latencyMs
+                usedResolver = answer
+                if (!answer.encrypted) category = "Fallback - network DNS"
+                else if (answer.failedOver) category = "Backup DoH - ${answer.resolverName}"
+                answer.bytes
             } catch (e: Exception) {
                 Log.w(TAG, "DoH failed for ${q.name}: ${e.message}")
                 error = e.message ?: e.javaClass.simpleName
@@ -232,8 +246,8 @@ class ZeroLeakVpnService : VpnService() {
             queryEdns = DnsMessage.queryEdns(q.dns, q.questionEnd)?.let { "UDP ${it.udpSize} · v${it.version}" + if (it.dnssecOk) " · DO" else "" },
             querySize = q.dns.size,
             ruleList = decision.match?.listName, rule = decision.match?.rule, ruleMatched = decision.match?.matched,
-            resolverName = if (decision.verdict == Verdict.ALLOWED) resolver.name else null,
-            resolverUrl = if (decision.verdict == Verdict.ALLOWED) resolver.url else null,
+            resolverName = if (decision.verdict == Verdict.ALLOWED) usedResolver?.resolverName ?: resolver.name else null,
+            resolverUrl = if (decision.verdict == Verdict.ALLOWED) usedResolver?.resolverUrl ?: resolver.url else null,
             dnssecRequested = wantDnssec && decision.verdict == Verdict.ALLOWED && !cached,
             dnssec = dnssec,
             cached = cached,
@@ -258,9 +272,11 @@ class ZeroLeakVpnService : VpnService() {
         val match: FilterMatch? = null,
     )
 
-    private fun decide(domain: String, pkg: String?, isSystem: Boolean): Decision {
+    private fun decide(domain: String, pkg: String?, isCore: Boolean): Decision {
         val match = Filters.match(domain)
         if (match != null && match.blocked) return Decision(Verdict.BLOCKED, match.category, match = match)
+        // A domain on your own allowlist is trusted for every app, so it skips the Strict Guard prompt.
+        val userAllowed = match != null && match.listId == FilterIndex.USER_ALLOW
 
         val mode = ZeroLeakage.mode.value
         if (pkg != null) {
@@ -271,7 +287,7 @@ class ZeroLeakVpnService : VpnService() {
                 ProtectionMode.LOCKDOWN ->
                     if (!rule.pinned) return Decision(Verdict.BLOCKED, "Total Lockdown")
                 ProtectionMode.STRICT ->
-                    if (!isSystem && !rule.approved && pkg !in ZeroLeakage.allowedOnce)
+                    if (!isCore && !userAllowed && !rule.approved && pkg !in ZeroLeakage.allowedOnce)
                         return Decision(Verdict.PROMPT, "Ask to Connect", prompt = true)
                 ProtectionMode.BALANCED -> Unit
             }
@@ -299,7 +315,8 @@ class ZeroLeakVpnService : VpnService() {
         }
     }
 
-    private data class Owner(val pkg: String?, val label: String, val uid: Int)
+    private data class AppInfo(val pkg: String?, val label: String, val isCore: Boolean)
+    private data class Owner(val pkg: String?, val label: String, val uid: Int, val isCore: Boolean)
 
     private fun attribute(q: DnsQuery): Owner {
         val uid = try {
@@ -311,22 +328,28 @@ class ZeroLeakVpnService : VpnService() {
         } catch (e: Exception) {
             Process.INVALID_UID
         }
-        if (uid == Process.INVALID_UID) return Owner(null, "unknown", uid)
-        val (pkg, label) = labels.getOrPut(uid) { lookupLabel(uid) }
-        return Owner(pkg, label, uid)
+        if (uid == Process.INVALID_UID) return Owner(null, "unknown", uid, isCore = true)
+        val info = owners.getOrPut(uid) { lookupOwner(uid) }
+        return Owner(info.pkg, info.label, uid, info.isCore)
     }
 
-    private fun lookupLabel(uid: Int): Pair<String?, String> {
+    /**
+     * "Core" means part of Android itself: system uids, and preinstalled system packages with no launcher icon
+     * (Google Play services, network stack, captive-portal login). Strict Guard never blocks these, because
+     * cutting them off breaks the whole phone. Apps you can open (Chrome, Google, YouTube) still need approval,
+     * and the Firewall screen offers Approve for exactly those.
+     */
+    private fun lookupOwner(uid: Int): AppInfo {
         val pm = packageManager
         val pkgs = pm.getPackagesForUid(uid)
-        if (pkgs.isNullOrEmpty()) return null to (if (uid < Process.FIRST_APPLICATION_UID) "Android system" else "uid $uid")
+        if (pkgs.isNullOrEmpty()) return AppInfo(null, if (uid < Process.FIRST_APPLICATION_UID) "Android system" else "uid $uid", isCore = true)
+        if (uid < Process.FIRST_APPLICATION_UID) return AppInfo(pkgs.first(), "Android system", isCore = true)
         val pkg = pkgs.first()
-        val label = try {
-            pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
-        } catch (e: PackageManager.NameNotFoundException) {
-            pkg
-        }
-        return pkg to (if (pkgs.size > 1 && uid < Process.FIRST_APPLICATION_UID) "Android system" else label)
+        val ai = runCatching { pm.getApplicationInfo(pkg, 0) }.getOrNull()
+        val label = ai?.let { pm.getApplicationLabel(it).toString() } ?: pkg
+        val allSystem = pkgs.all { p -> runCatching { pm.getApplicationInfo(p, 0).flags and ApplicationInfo.FLAG_SYSTEM != 0 }.getOrDefault(false) }
+        val anyLaunchable = pkgs.any { p -> pm.getLaunchIntentForPackage(p) != null }
+        return AppInfo(pkg, label, isCore = allSystem && !anyLaunchable)
     }
 
     private fun onWifi(): Boolean {

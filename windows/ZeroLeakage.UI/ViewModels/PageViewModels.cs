@@ -359,124 +359,199 @@ public sealed class DnsTelemetryViewModel : ObservableObject
     }
 }
 
-// ═════════════════════════════ DeepScan AV ═════════════════════════════
+// ═════════════════════════════ DeepScan AV (Microsoft Defender) ═════════════════════════════
+/// <summary>
+/// DeepScan is a front end for the Microsoft Defender engine built into Windows: real scans, real detections,
+/// real quarantine. Removing or restoring a threat asks for administrator rights.
+/// </summary>
 public sealed class DeepScanViewModel : ObservableObject
 {
     private readonly MainViewModel _shell;
-    private readonly IProtectionEngine _engine;
     private CancellationTokenSource? _cts;
-    private bool _isScanning, _realtimeEnabled = true;
-    private double _progress;
-    private string _currentPath = "";
-    private long _filesScanned;
+    private bool _isScanning, _isLoading;
+    private TimeSpan _elapsed;
+    private bool _isUpdatingDefinitions;
+    private string? _definitionsStatus;
     private int _threatsFound;
-    private string _statusText = "Idle — last scan clean";
+    private string _statusText = "Checking Microsoft Defender…";
     private ScanKind _kind;
+    private DefenderStatus? _status;
 
     public DeepScanViewModel(MainViewModel shell, IProtectionEngine engine)
     {
         _shell = shell;
-        _engine = engine;
-        QuickScanCommand = new AsyncRelayCommand(() => ScanAsync(ScanKind.Quick), () => !IsScanning);
-        FullScanCommand = new AsyncRelayCommand(() => ScanAsync(ScanKind.Full), () => !IsScanning);
+        QuickScanCommand = new AsyncRelayCommand(() => ScanAsync(ScanKind.Quick), () => !IsScanning && DefenderAvailable);
+        FullScanCommand = new AsyncRelayCommand(() => ScanAsync(ScanKind.Full), () => !IsScanning && DefenderAvailable);
         CancelScanCommand = new RelayCommand(() => _cts?.Cancel(), () => IsScanning);
+        RefreshCommand = new AsyncRelayCommand(LoadAsync, () => !_isLoading);
+        UpdateDefinitionsCommand = new AsyncRelayCommand(UpdateDefinitionsAsync, () => !IsUpdatingDefinitions && !IsScanning && DefenderAvailable);
+        OpenSecurityCommand = new RelayCommand(() => DefenderService.OpenWindowsSecurity("threat"));
+        OpenRealtimeSettingsCommand = new RelayCommand(() => DefenderService.OpenWindowsSecurity("threatsettings"));
+        RemoveThreatsCommand = new RelayCommand(() =>
+            _shell.RequestConfirm("Remove active threats?",
+                "Microsoft Defender will remove every active threat it has detected. Windows will ask for administrator permission.",
+                "Remove threats", true, async () =>
+                {
+                    bool ok = await DefenderService.RemoveActiveThreatsAsync();
+                    await LoadAsync();
+                    _shell.ShowSnackbar(ok ? "Defender removed the active threats" : "Not removed: permission was declined or Defender reported an error");
+                }));
         RestoreItemCommand = new RelayCommand(p =>
         {
-            if (p is not QuarantineItem q) return;
-            _shell.RequestConfirm("Restore from vault?",
-                $"{q.FileName} was flagged as {q.ThreatName}. Restoring puts it back at {q.OriginalPath} and it will be able to run.",
+            if (p is not DefenderDetection d) return;
+            _shell.RequestConfirm("Restore from quarantine?",
+                $"{d.FileName} was flagged by Microsoft Defender as {d.ThreatName}. Restoring puts it back at {d.PrimaryResource} and it will be able to run. Windows will ask for administrator permission.",
                 "Restore file", true, async () =>
                 {
-                    await _engine.RestoreQuarantinedAsync(q);
-                    Quarantine.Remove(q);
-                    _shell.ShowSnackbar($"{q.FileName} restored");
+                    bool ok = await DefenderService.RestoreAsync(d);
+                    await LoadAsync();
+                    _shell.ShowSnackbar(ok ? $"{d.FileName} restored by Defender" : "Not restored: permission was declined or Defender reported an error");
                 });
         });
-        DeleteItemCommand = new RelayCommand(p =>
-        {
-            if (p is not QuarantineItem q) return;
-            _shell.RequestConfirm("Delete permanently?",
-                $"{q.FileName} will be shredded from the encrypted vault. This cannot be undone.",
-                "Delete forever", true, async () =>
-                {
-                    await _engine.DeleteQuarantinedAsync(q);
-                    Quarantine.Remove(q);
-                    _shell.ShowSnackbar($"{q.FileName} destroyed");
-                });
-        });
-        Refresh();
+        _ = LoadAsync();
     }
 
-    public ObservableCollection<QuarantineItem> Quarantine { get; } = new();
+    public ObservableCollection<DefenderDetection> Detections { get; } = new();
     public ICommand QuickScanCommand { get; }
     public ICommand FullScanCommand { get; }
     public ICommand CancelScanCommand { get; }
+    public ICommand RefreshCommand { get; }
+    public ICommand UpdateDefinitionsCommand { get; }
+    public ICommand RemoveThreatsCommand { get; }
     public ICommand RestoreItemCommand { get; }
-    public ICommand DeleteItemCommand { get; }
+    public ICommand OpenSecurityCommand { get; }
+    public ICommand OpenRealtimeSettingsCommand { get; }
 
-    public bool IsScanning { get => _isScanning; private set => SetProperty(ref _isScanning, value); }
-    public double Progress { get => _progress; private set { if (SetProperty(ref _progress, value)) OnPropertyChanged(nameof(ProgressText)); } }
-    public string ProgressText => $"{_progress:0}%";
-    public string CurrentPath { get => _currentPath; private set => SetProperty(ref _currentPath, value); }
-    public long FilesScanned { get => _filesScanned; private set { if (SetProperty(ref _filesScanned, value)) OnPropertyChanged(nameof(FilesScannedText)); } }
-    public string FilesScannedText => _filesScanned.ToString("N0");
+    public bool IsScanning
+    {
+        get => _isScanning;
+        private set { if (SetProperty(ref _isScanning, value)) { OnPropertyChanged(nameof(ProgressText)); CommandManager.InvalidateRequerySuggested(); } }
+    }
+    /// <summary>Elapsed time while scanning (Defender does not publish a percentage); a check mark when idle.</summary>
+    public string ProgressText => IsScanning ? _elapsed.ToString(_elapsed.TotalHours >= 1 ? @"h\:mm\:ss" : @"mm\:ss") : (ActiveThreats > 0 ? "!" : "✓");
     public int ThreatsFound { get => _threatsFound; private set => SetProperty(ref _threatsFound, value); }
     public string StatusText { get => _statusText; private set => SetProperty(ref _statusText, value); }
-    public string ScanKindText => _kind == ScanKind.Quick ? "QUICK SCAN" : "FULL SCAN";
+    public string ScanKindText => IsScanning ? (_kind == ScanKind.Quick ? "QUICK SCAN" : "FULL SCAN") : (ActiveThreats > 0 ? "ACTION NEEDED" : "PROTECTED");
 
-    public bool RealtimeEnabled
+    public bool DefenderAvailable => _status?.Available == true;
+    public bool RealtimeOn => _status?.RealTimeProtection == true;
+    public string RealtimeText => _status is null ? "…" : !_status.Available ? "UNAVAILABLE" : _status.RealTimeProtection ? "ON" : "OFF";
+    public string SignatureText => _status?.SignaturesUpdated is { } t ? $"{_status.SignatureVersion} · {t.ToLocalTime():dd MMM HH:mm}" : "—";
+    public string SignatureVersionText => string.IsNullOrEmpty(_status?.SignatureVersion) ? "—" : _status!.SignatureVersion;
+    public string SignatureAgeText => _status?.SignaturesUpdated is { } t ? $"Updated {Ago(t.ToLocalTime())}" : "Not updated yet";
+    public bool SignaturesStale => _status?.SignaturesUpdated is { } t && DateTime.UtcNow - t.ToUniversalTime() > TimeSpan.FromDays(3);
+
+    public bool IsUpdatingDefinitions
     {
-        get => _realtimeEnabled;
-        set
-        {
-            if (!SetProperty(ref _realtimeEnabled, value)) return;
-            _ = _engine.SetRealtimeProtectionAsync(value);
-            _shell.ShowSnackbar(value ? "Real-time shield on" : "Real-time shield paused");
-        }
+        get => _isUpdatingDefinitions;
+        private set { if (SetProperty(ref _isUpdatingDefinitions, value)) CommandManager.InvalidateRequerySuggested(); }
+    }
+    /// <summary>Result line of the last definitions update (null until the user runs one).</summary>
+    public string? DefinitionsStatus { get => _definitionsStatus; private set => SetProperty(ref _definitionsStatus, value); }
+
+    private static string Ago(DateTime local)
+    {
+        var d = DateTime.Now - local;
+        if (d < TimeSpan.FromMinutes(1)) return "just now";
+        if (d < TimeSpan.FromHours(1)) return $"{(int)d.TotalMinutes} min ago";
+        if (d < TimeSpan.FromDays(1)) return $"{(int)d.TotalHours} h ago";
+        return local.ToString("dd MMM · HH:mm");
     }
 
-    public void Refresh()
+    public string LastScanText => _status?.LastScan is { } t ? t.ToLocalTime().ToString("dd MMM yyyy · HH:mm") : "Never";
+    public int ActiveThreats => Detections.Count(d => d.NeedsAction);
+    public bool HasActiveThreats => ActiveThreats > 0;
+
+    /// <summary>Called when the page is opened.</summary>
+    public void Refresh() => _ = LoadAsync();
+
+    private async Task LoadAsync()
     {
-        Quarantine.Clear();
-        foreach (var q in _engine.GetQuarantine()) Quarantine.Add(q);
+        if (_isLoading) return;
+        _isLoading = true;
+        try
+        {
+            var status = await DefenderService.GetStatusAsync();
+            var detections = status.Available ? await DefenderService.GetDetectionsAsync() : Array.Empty<DefenderDetection>();
+            _status = status;
+            Detections.Clear();
+            foreach (var d in detections) Detections.Add(d);
+            if (!IsScanning)
+            {
+                StatusText = !status.Available
+                    ? $"Microsoft Defender is unavailable: {status.Error}"
+                    : HasActiveThreats ? $"{ActiveThreats} active threat(s) need attention"
+                    : "No active threats · protected by Microsoft Defender";
+            }
+            foreach (var n in new[] { nameof(DefenderAvailable), nameof(RealtimeOn), nameof(RealtimeText), nameof(SignatureText),
+                                      nameof(SignatureVersionText), nameof(SignatureAgeText), nameof(SignaturesStale),
+                                      nameof(LastScanText), nameof(ActiveThreats), nameof(HasActiveThreats), nameof(ProgressText), nameof(ScanKindText) })
+                OnPropertyChanged(n);
+            CommandManager.InvalidateRequerySuggested();
+        }
+        finally { _isLoading = false; }
+    }
+
+    /// <summary>Fetches the latest Microsoft Defender security intelligence (may ask for admin if Defender insists).</summary>
+    private async Task UpdateDefinitionsAsync()
+    {
+        IsUpdatingDefinitions = true;
+        DefinitionsStatus = "Downloading the latest Microsoft Defender definitions…";
+        try
+        {
+            var outcome = await DefenderService.UpdateSignaturesAsync();
+            DefinitionsStatus = outcome.Message;
+            _shell.ShowSnackbar(outcome.Message);
+        }
+        finally
+        {
+            IsUpdatingDefinitions = false;
+            await LoadAsync();
+        }
     }
 
     private async Task ScanAsync(ScanKind kind)
     {
         _kind = kind;
-        OnPropertyChanged(nameof(ScanKindText));
         _cts = new CancellationTokenSource();
-        IsScanning = true;
-        Progress = 0;
+        _elapsed = TimeSpan.Zero;
         ThreatsFound = 0;
-        FilesScanned = 0;
-        StatusText = kind == ScanKind.Quick ? "Quick scan — memory, startup & downloads" : "Full scan — every fixed drive";
+        IsScanning = true;
+        OnPropertyChanged(nameof(ScanKindText));
+        StatusText = kind == ScanKind.Quick
+            ? "Microsoft Defender quick scan: memory, startup items and common malware locations…"
+            : "Microsoft Defender full scan: every file on every fixed drive. This can take an hour or more…";
+        string? finalStatus = null;
         try
         {
-            var result = await _engine.RunScanAsync(kind, new Progress<ScanProgress>(p =>
+            var outcome = await DefenderService.ScanAsync(kind == ScanKind.Full, new Progress<TimeSpan>(t =>
             {
-                Progress = p.Percent;
-                CurrentPath = p.CurrentPath;
-                FilesScanned = p.FilesScanned;
-                ThreatsFound = p.ThreatsFound;
+                _elapsed = t;
+                OnPropertyChanged(nameof(ProgressText));
             }), _cts.Token);
-            StatusText = result.ThreatsFound == 0
-                ? $"Clean · {result.FilesScanned:N0} files in {result.Duration:mm\\:ss}"
-                : $"{result.ThreatsFound} threat(s) moved to the encrypted vault";
-            CurrentPath = "";
-            Refresh();
-            _shell.ShowSnackbar(StatusText);
+            ThreatsFound = outcome.NewDetections.Count;
+            finalStatus = !outcome.Completed ? outcome.Message
+                : outcome.NewDetections.Count == 0 ? $"Clean · Defender found no threats ({outcome.Duration:mm\\:ss})"
+                : $"Defender found {outcome.NewDetections.Count} threat(s): see the list";
+            _shell.ShowSnackbar(finalStatus);
         }
         catch (OperationCanceledException)
         {
-            StatusText = "Scan cancelled";
-            CurrentPath = "";
+            finalStatus = "Scan cancelled";
+        }
+        catch (Exception ex)
+        {
+            finalStatus = $"Scan failed: {ex.Message}";
+            throw;   // still reported (snackbar + error log)
         }
         finally
         {
-            IsScanning = false;
             _cts.Dispose();
             _cts = null;
+            await LoadAsync();
+            if (finalStatus is not null) StatusText = finalStatus;
+            IsScanning = false;
+            OnPropertyChanged(nameof(ScanKindText));
         }
     }
 }
@@ -530,6 +605,8 @@ public sealed class SettingsViewModel : ObservableObject
     public ICommand RestoreSnapshotCommand { get; }
     public ICommand RerunAuditCommand { get; }
     public ICommand RestoreDefaultsCommand => _shell.RestoreDefaultsCommand;
+    public UpdatesViewModel Updates => _shell.Updates;
+    public ICommand OpenAboutCommand => _shell.OpenAboutCommand;
 
     public string NewSnapshotName { get => _newSnapshotName; set => SetProperty(ref _newSnapshotName, value ?? ""); }
     public bool IsCreating { get => _isCreating; private set => SetProperty(ref _isCreating, value); }

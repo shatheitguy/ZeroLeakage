@@ -42,6 +42,7 @@ fun SettingsScreen(shield: ShieldController) {
         item {
             Text("Settings", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Zl.TextPrimary, modifier = Modifier.padding(horizontal = 4.dp))
         }
+        item { ProtectionMethodCard(shield) }
         item {
             GlassCard {
                 Overline("Shield", color = Zl.TextPrimary)

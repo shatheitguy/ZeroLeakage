@@ -1,5 +1,8 @@
 package app.zeroleakage.mobile.ui.screens
 
+import android.os.Build
+import android.view.HapticFeedbackConstants
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -72,6 +75,7 @@ private enum class FeedFilter { ALL, BLOCKED, ALLOWED }
 fun DashboardScreen(shield: ShieldController) {
     val mode by ZeroLeakage.mode.collectAsStateWithLifecycle()
     val running by ZeroLeakage.vpnRunning.collectAsStateWithLifecycle()
+    val method by ZeroLeakage.method.collectAsStateWithLifecycle()
     val stats by ZeroLeakage.stats.collectAsStateWithLifecycle()
     val feed by ZeroLeakage.feed.collectAsStateWithLifecycle()
     val rules by ZeroLeakage.rules.collectAsStateWithLifecycle()
@@ -122,7 +126,12 @@ fun DashboardScreen(shield: ShieldController) {
                 Spacer(Modifier.height(14.dp))
                 ModeSwitcher(mode, onSelect = ZeroLeakage::setMode)
                 Spacer(Modifier.height(12.dp))
-                if (running) {
+                if (method == ZeroLeakage.Method.LITE) {
+                    Text(
+                        "Lite mode: Android's Private DNS does the blocking, no VPN needed. Manage it below.",
+                        fontSize = 12.5.sp, color = Zl.Mint, lineHeight = 17.sp,
+                    )
+                } else if (running) {
                     OutlinedButton(
                         onClick = shield.stop,
                         modifier = Modifier.fillMaxWidth(),
@@ -139,6 +148,9 @@ fun DashboardScreen(shield: ShieldController) {
                 }
             }
         }
+
+        item { DnsHealthBanner() }
+        if (method == ZeroLeakage.Method.LITE) item { ProtectionMethodCard(shield) }
 
         // ═════ Bento metrics 2×2 ═════
         item {
@@ -230,11 +242,14 @@ private fun FeedRow(e: FeedEvent, isExpanded: Boolean, onInspect: () -> Unit, on
         AnimatedVisibility(isExpanded) {
             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SmallAction("Details", Zl.Violet, onInspect)
-                if (e.verdict == Verdict.ALLOWED) SmallAction("Block", Zl.TextSecondary) { Filters.block(e.domain) }
-                else SmallAction("Allow", Zl.Mint) { Filters.allow(e.domain) }
+                if (e.verdict == Verdict.ALLOWED) SmallAction("Block domain", Zl.TextSecondary) {
+                    Filters.block(e.domain)
+                    ZeroLeakage.say("${e.domain} blocked")
+                } else SmallAction(allowLabel(e), Zl.Mint) { allowEvent(e) }
                 if (e.packageName != null) {
                     SmallAction("Kill app", Zl.Crimson) {
                         ZeroLeakage.updateRule(e.packageName) { it.copy(wifi = false, mobile = false, approved = false) }
+                        ZeroLeakage.say("${e.appLabel} cut off from the network")
                     }
                 }
             }
@@ -242,14 +257,56 @@ private fun FeedRow(e: FeedEvent, isExpanded: Boolean, onInspect: () -> Unit, on
     }
 }
 
+/** Blocked because of the app (Strict Guard / lockdown / kill switch), not because of the domain. */
+private fun isAppBlock(e: FeedEvent) = e.packageName != null &&
+    e.category in setOf("Ask to Connect", "Total Lockdown", "App Network Killed")
+
+private fun allowLabel(e: FeedEvent) = if (isAppBlock(e)) "Allow app" else "Allow domain"
+
+/** "Allow" fixes whatever actually blocked the lookup, so it works on the very next request. */
+private fun allowEvent(e: FeedEvent) {
+    val pkg = e.packageName
+    when {
+        pkg != null && e.category == "Ask to Connect" -> {
+            ZeroLeakage.updateRule(pkg) { it.copy(approved = true, wifi = true, mobile = true) }
+            ZeroLeakage.say("${e.appLabel} allowed. It can connect now.")
+        }
+        pkg != null && e.category == "Total Lockdown" -> {
+            ZeroLeakage.updateRule(pkg) { it.copy(pinned = true, wifi = true, mobile = true) }
+            ZeroLeakage.say("${e.appLabel} pinned: allowed in Total Zero-Leak")
+        }
+        pkg != null && e.category == "App Network Killed" -> {
+            ZeroLeakage.updateRule(pkg) { it.copy(wifi = true, mobile = true) }
+            ZeroLeakage.say("${e.appLabel} back online")
+        }
+        else -> {
+            Filters.allow(e.domain)
+            ZeroLeakage.say("${e.domain} allowed for every app")
+        }
+    }
+}
+
+/** Wraps a click so it is felt: a short confirm haptic, then the action. */
+@Composable
+fun withConfirmHaptic(onClick: () -> Unit): () -> Unit {
+    val view = LocalView.current
+    return {
+        view.performHapticFeedback(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.VIRTUAL_KEY,
+        )
+        onClick()
+    }
+}
+
 @Composable
 fun SmallAction(text: String, color: Color, onClick: () -> Unit) {
+    val click = withConfirmHaptic(onClick)
     Box(
         Modifier
             .clip(RoundedCornerShape(8.dp))
             .background(color.copy(alpha = 0.12f))
             .border(1.dp, color.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
+            .clickable(onClick = click)
             .padding(horizontal = 10.dp, vertical = 5.dp),
     ) { Text(text, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = color) }
 }

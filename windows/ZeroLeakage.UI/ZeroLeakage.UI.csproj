@@ -16,11 +16,19 @@
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
     <Product>ZeroLeakage</Product>
     <Company>ZeroLeakage</Company>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <!-- Self-contained single folder so the MSI does not depend on an installed .NET runtime. -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishReadyToRun>true</PublishReadyToRun>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Shown in About ZeroLeakage. -->
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>BuildDate</_Parameter1>
+      <_Parameter2>$([System.DateTime]::UtcNow.ToString("o"))</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
 
 </Project>

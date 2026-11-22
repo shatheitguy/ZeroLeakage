@@ -251,6 +251,18 @@ private fun ResolverCard() {
         if (customUrl.isNotEmpty()) {
             ResolverRow(Resolver(ZeroLeakage.CUSTOM_RESOLVER, "Custom DoH", customUrl, customUrl, "Custom"), resolverId == ZeroLeakage.CUSTOM_RESOLVER)
         }
+        val fallback by ZeroLeakage.fallbackDns.collectAsStateWithLifecycle()
+        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Fall back to network DNS", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = Zl.TextPrimary)
+                Text(
+                    "If every encrypted resolver is blocked on a network, answer through that network's own DNS (unencrypted) instead of breaking all apps. Filters and the firewall still apply.",
+                    fontSize = 11.5.sp, color = Zl.TextMuted, lineHeight = 15.sp,
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            ZlSwitch(fallback, ZeroLeakage::setFallbackDns, Zl.Violet)
+        }
         Spacer(Modifier.height(4.dp))
         Overline("Custom DoH endpoint")
         Spacer(Modifier.height(6.dp))

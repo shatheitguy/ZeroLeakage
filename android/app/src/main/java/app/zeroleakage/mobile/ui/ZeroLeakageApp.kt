@@ -1,5 +1,23 @@
 package app.zeroleakage.mobile.ui
 
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import app.zeroleakage.mobile.data.Updates
+import app.zeroleakage.mobile.ui.screens.AboutScreen
+import app.zeroleakage.mobile.ui.screens.AccountDestination
+import app.zeroleakage.mobile.ui.screens.AccountSheet
+import app.zeroleakage.mobile.ui.screens.PrivacyXrayScreen
+import app.zeroleakage.mobile.ui.screens.ProfileButton
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import kotlinx.coroutines.launch
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -80,9 +98,35 @@ fun ZeroLeakageApp() {
     val running by ZeroLeakage.vpnRunning.collectAsStateWithLifecycle()
     val accent by animateColorAsState(Zl.accent(mode), tween(450), label = "accent")
 
+    val context = LocalContext.current
+    var showAccount by remember { mutableStateOf(false) }
+    var overlay by rememberSaveable { mutableStateOf<AccountDestination?>(null) }
+    LaunchedEffect(Unit) { Updates.check(context) }      // at most once a day
+
+    // Confirmations ("Chrome allowed") from anywhere in the app, including notification actions.
+    val snackbar = remember { SnackbarHostState() }
+    LaunchedEffect(Unit) {
+        ZeroLeakage.messages.collect { msg ->
+            launch {
+                snackbar.currentSnackbarData?.dismiss()
+                snackbar.showSnackbar(msg, duration = SnackbarDuration.Short)
+            }
+        }
+    }
+
     Scaffold(
         containerColor = Zl.Canvas,
-        topBar = { TopBar(accent, running, "MODE ${mode.number}: ${mode.short}") },
+        snackbarHost = {
+            SnackbarHost(snackbar) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = Zl.SurfaceRaised,
+                    contentColor = Zl.TextPrimary,
+                    shape = RoundedCornerShape(12.dp),
+                )
+            }
+        },
+        topBar = { TopBar(accent, running, "MODE ${mode.number}: ${mode.short}") { showAccount = true } },
         bottomBar = {
             NavigationBar(containerColor = Color(0xFF0B0C12), tonalElevation = 0.dp) {
                 Tab.entries.forEach { t ->
@@ -103,7 +147,7 @@ fun ZeroLeakageApp() {
             }
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+        Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
             AnimatedContent(
                 targetState = tab,
                 transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(150)) },
@@ -118,10 +162,31 @@ fun ZeroLeakageApp() {
             }
         }
     }
+
+    if (showAccount) {
+        AccountSheet(onDismiss = { showAccount = false }) { dest ->
+            showAccount = false
+            if (dest == AccountDestination.SETTINGS) tab = Tab.SETTINGS else overlay = dest
+        }
+    }
+    overlay?.let { dest ->
+        Dialog(
+            onDismissRequest = { overlay = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+        ) {
+            Box(Modifier.fillMaxSize().background(Zl.Canvas)) {
+                when (dest) {
+                    AccountDestination.ABOUT -> AboutScreen(onClose = { overlay = null })
+                    AccountDestination.XRAY -> PrivacyXrayScreen(onClose = { overlay = null })
+                    AccountDestination.SETTINGS -> Unit
+                }
+            }
+        }
+    }
 }
 
 @Composable
-private fun TopBar(accent: Color, running: Boolean, modeLabel: String) {
+private fun TopBar(accent: Color, running: Boolean, modeLabel: String, onProfile: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -153,5 +218,7 @@ private fun TopBar(accent: Color, running: Boolean, modeLabel: String) {
             Box(Modifier.padding(horizontal = 7.dp).width(1.dp).height(10.dp).background(Zl.BorderStrong))
             Text(modeLabel.substringBefore(":"), style = Zl.mono.copy(fontSize = 10.sp, color = Zl.TextSecondary))
         }
+        Spacer(Modifier.width(10.dp))
+        ProfileButton(accent, onProfile)
     }
 }

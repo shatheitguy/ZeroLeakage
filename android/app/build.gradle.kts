@@ -12,8 +12,8 @@ android {
         applicationId = "app.zeroleakage.mobile"
         minSdk = 29          // ConnectivityManager.getConnectionOwnerUid (per-app DNS attribution)
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
     }
 
     buildTypes {
