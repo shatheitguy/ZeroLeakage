@@ -1,0 +1,204 @@
+<UserControl x:Class="ZeroLeakage.UI.Views.DnsTelemetryView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:m="clr-namespace:ZeroLeakage.UI.Models">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
+        <Grid Margin="8,10,16,22">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="16" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <StackPanel>
+                <TextBlock Style="{StaticResource Text.Title}" Text="DNS &amp; Telemetry" />
+                <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Body}"
+                           Text="Every lookup is encrypted with DNS-over-HTTPS and checked against your blocklists. Windows diagnostic traces are wiped on demand." />
+            </StackPanel>
+
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1.15*" />
+                    <ColumnDefinition Width="14" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- ═════ Left: blocklists + custom domains ═════ -->
+                <StackPanel>
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,12">
+                                <TextBlock Style="{StaticResource Text.Overline}" FontSize="11" Foreground="{StaticResource Brush.TextPrimary}" Text="BLOCKLISTS" />
+                                <TextBlock HorizontalAlignment="Right" Style="{StaticResource Text.Mono}" FontSize="11"
+                                           Foreground="{StaticResource Brush.Violet}" Text="{Binding ActiveEntriesText}" />
+                            </Grid>
+                            <ItemsControl ItemsSource="{Binding Blocklists}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type m:BlocklistSource}">
+                                        <Border Style="{StaticResource Card.Inset}" Margin="0,0,0,8">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel>
+                                                    <TextBlock FontSize="13" FontWeight="SemiBold" Text="{Binding Name}" />
+                                                    <TextBlock Margin="0,2,0,0" Style="{StaticResource Text.Caption}" Text="{Binding Description}" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Style="{StaticResource Text.Mono}"
+                                                           FontSize="11" Foreground="{StaticResource Brush.TextMuted}" Text="{Binding EntryText}" />
+                                                <ToggleButton Grid.Column="2" Style="{StaticResource Toggle.Switch}" Background="{StaticResource Brush.Violet}"
+                                                              IsChecked="{Binding IsEnabled}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}" Margin="0,14,0,0">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource Text.Overline}" FontSize="11" Foreground="{StaticResource Brush.TextPrimary}" Text="CUSTOM BLOCKED DOMAINS" />
+                            <Grid Margin="0,12,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox Style="{StaticResource TextBox.Input}" Tag="tracker.example.com"
+                                         Text="{Binding NewDomain, UpdateSourceTrigger=PropertyChanged}">
+                                    <TextBox.InputBindings>
+                                        <KeyBinding Key="Enter" Command="{Binding AddDomainCommand}" />
+                                    </TextBox.InputBindings>
+                                </TextBox>
+                                <Button Grid.Column="1" Margin="8,0,0,0" Style="{StaticResource Button.Primary}" Content="Block" Command="{Binding AddDomainCommand}" />
+                            </Grid>
+                            <TextBlock Style="{StaticResource Text.Caption}" Margin="2,0,0,4"
+                                       Visibility="{Binding CustomDomains.Count, Converter={StaticResource ZeroToVisible}}"
+                                       Text="No custom domains yet — add one here or hit “Block Domain” in the live feed." />
+                            <ItemsControl ItemsSource="{Binding CustomDomains}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,0,0,4">
+                                            <Border CornerRadius="8" Padding="10,6" Background="{StaticResource Brush.Inset}">
+                                                <Grid>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Style="{StaticResource Text.Icon}" FontSize="11" Text="&#xE711;" Foreground="{StaticResource Brush.Crimson}" />
+                                                        <TextBlock Margin="10,0,0,0" Style="{StaticResource Text.Mono}" Text="{Binding}" VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                    <Button HorizontalAlignment="Right" Style="{StaticResource Button.Chip}" Content="Unblock"
+                                                            Command="{Binding DataContext.RemoveDomainCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                            CommandParameter="{Binding}" />
+                                                </Grid>
+                                            </Border>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- ═════ Right: DoH + telemetry wiper ═════ -->
+                <StackPanel Grid.Column="2">
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,12">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Style="{StaticResource Text.Overline}" FontSize="11" Foreground="{StaticResource Brush.TextPrimary}" Text="ENCRYPTED DNS" VerticalAlignment="Center" />
+                                    <Border Margin="10,0,0,0" Style="{StaticResource Badge}" Background="{StaticResource Brush.VioletSoft}" BorderBrush="{StaticResource Brush.VioletLine}">
+                                        <TextBlock Style="{StaticResource Badge.Text}" Foreground="{StaticResource Brush.Violet}" Text="DoH · TLS 1.3" />
+                                    </Border>
+                                </StackPanel>
+                                <TextBlock HorizontalAlignment="Right" Style="{StaticResource Text.Mono}" Foreground="{StaticResource Brush.Violet}"
+                                           Text="{Binding LatencyText}" />
+                            </Grid>
+                            <ListBox ItemsSource="{Binding Resolvers}" SelectedItem="{Binding SelectedResolver}"
+                                     Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem">
+                                        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="ListBoxItem">
+                                                    <RadioButton Style="{StaticResource Radio.Card}" GroupName="Resolver"
+                                                                 IsChecked="{Binding IsSelected, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                                        <Grid>
+                                                            <StackPanel>
+                                                                <TextBlock FontSize="13" FontWeight="SemiBold" Text="{Binding Name}" />
+                                                                <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding Note}" />
+                                                            </StackPanel>
+                                                            <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center" Style="{StaticResource Text.Mono}"
+                                                                       FontSize="10.5" Foreground="{StaticResource Brush.TextMuted}" Text="{Binding Address}" />
+                                                        </Grid>
+                                                    </RadioButton>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
+                            </ListBox>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}" Margin="0,14,0,0">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource Text.Overline}" FontSize="11" Foreground="{StaticResource Brush.TextPrimary}" Text="WINDOWS TELEMETRY" />
+                            <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding TelemetryServices}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type m:TelemetryServiceStatus}">
+                                        <Grid Margin="0,0,0,8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Style="{StaticResource Text.Mono}" FontWeight="SemiBold" Text="{Binding Name}" />
+                                                <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding DisplayName}" />
+                                            </StackPanel>
+                                            <Border x:Name="State" Grid.Column="1" Style="{StaticResource Badge}">
+                                                <TextBlock x:Name="StateText" Style="{StaticResource Badge.Text}" Text="{Binding StateText}" />
+                                            </Border>
+                                        </Grid>
+                                        <DataTemplate.Triggers>
+                                            <DataTrigger Binding="{Binding IsNeutralized}" Value="False">
+                                                <Setter TargetName="State" Property="Background" Value="{StaticResource Brush.AmberSoft}" />
+                                                <Setter TargetName="State" Property="BorderBrush" Value="{StaticResource Brush.AmberLine}" />
+                                                <Setter TargetName="StateText" Property="Foreground" Value="{StaticResource Brush.Amber}" />
+                                            </DataTrigger>
+                                        </DataTemplate.Triggers>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <Rectangle Style="{StaticResource Divider}" Margin="0,6,0,14" />
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock FontSize="13" FontWeight="SemiBold" Text="Trace log wiper" />
+                                    <TextBlock Style="{StaticResource Text.Caption}" Text="Purges .etl diagnostics &amp; AutoLogger sessions" />
+                                </StackPanel>
+                                <Button Grid.Column="1" Style="{StaticResource Button.Danger}" Command="{Binding WipeLogsCommand}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Style="{StaticResource Text.Icon}" FontSize="12" Text="&#xE74D;" Foreground="{StaticResource Brush.Crimson}" />
+                                        <TextBlock Margin="8,0,0,0" Text="Wipe .etl logs" />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                            <ProgressBar Margin="0,14,0,0" Style="{StaticResource ProgressBar.Thin}" Foreground="{StaticResource Brush.Crimson}"
+                                         Maximum="100" Value="{Binding WipeProgress, Mode=OneWay}"
+                                         Visibility="{Binding IsWiping, Converter={StaticResource BoolToVisible}}" />
+                            <TextBlock Margin="0,10,0,0" Style="{StaticResource Text.Mono}" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"
+                                       Text="{Binding LastWipeText}" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </ScrollViewer>
+</UserControl>

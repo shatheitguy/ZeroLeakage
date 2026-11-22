@@ -1,0 +1,264 @@
+<UserControl x:Class="ZeroLeakage.UI.Views.AuditWizardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ctl="clr-namespace:ZeroLeakage.UI.Controls"
+             xmlns:m="clr-namespace:ZeroLeakage.UI.Models"
+             xmlns:vm="clr-namespace:ZeroLeakage.UI.ViewModels">
+    <Grid Background="{StaticResource Brush.Canvas}">
+        <!-- ambient bloom -->
+        <Ellipse Width="900" Height="600" Margin="0,-380,0,0" VerticalAlignment="Top" HorizontalAlignment="Center" IsHitTestVisible="False"
+                 Fill="{DynamicResource Brush.ModeAccent}" Opacity="0.08" OpacityMask="{StaticResource Mask.RadialGlow}" />
+
+        <Grid MaxWidth="960" Margin="40,20,40,26">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- ═════ Stepper ═════ -->
+            <ItemsControl ItemsSource="{Binding Steps}" HorizontalAlignment="Center">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:WizardStep}">
+                        <StackPanel Orientation="Horizontal">
+                            <Rectangle x:Name="Connector" Width="56" Height="1" Margin="12,0" VerticalAlignment="Center" Fill="{StaticResource Brush.BorderStrong}" />
+                            <Grid Width="30" Height="30">
+                                <Ellipse x:Name="Dot" StrokeThickness="1.5" Stroke="{StaticResource Brush.BorderStrong}" Fill="{StaticResource Brush.Inset}" />
+                                <TextBlock x:Name="Num" HorizontalAlignment="Center" VerticalAlignment="Center" FontFamily="{StaticResource Font.Mono}"
+                                           FontSize="11" FontWeight="Bold" Foreground="{StaticResource Brush.TextMuted}" Text="{Binding Number}" />
+                            </Grid>
+                            <TextBlock x:Name="Label" Margin="10,0,0,0" VerticalAlignment="Center" FontSize="12.5" FontWeight="SemiBold"
+                                       Foreground="{StaticResource Brush.TextMuted}" Text="{Binding Title}" />
+                        </StackPanel>
+                        <DataTemplate.Triggers>
+                            <DataTrigger Binding="{Binding Index}" Value="0">
+                                <Setter TargetName="Connector" Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsDone}" Value="True">
+                                <Setter TargetName="Dot" Property="Fill" Value="{DynamicResource Brush.ModeAccentSoft}" />
+                                <Setter TargetName="Dot" Property="Stroke" Value="{DynamicResource Brush.ModeAccent}" />
+                                <Setter TargetName="Num" Property="Text" Value="✓" />
+                                <Setter TargetName="Num" Property="Foreground" Value="{DynamicResource Brush.ModeAccent}" />
+                                <Setter TargetName="Label" Property="Foreground" Value="{StaticResource Brush.TextSecondary}" />
+                                <Setter TargetName="Connector" Property="Fill" Value="{DynamicResource Brush.ModeAccent}" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                <Setter TargetName="Dot" Property="Fill" Value="{DynamicResource Brush.ModeAccent}" />
+                                <Setter TargetName="Dot" Property="Stroke" Value="{DynamicResource Brush.ModeAccent}" />
+                                <Setter TargetName="Num" Property="Foreground" Value="{StaticResource Brush.TextOnAccent}" />
+                                <Setter TargetName="Label" Property="Foreground" Value="{StaticResource Brush.TextPrimary}" />
+                                <Setter TargetName="Connector" Property="Fill" Value="{DynamicResource Brush.ModeAccent}" />
+                            </DataTrigger>
+                        </DataTemplate.Triggers>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- ═════ Step content ═════ -->
+            <Grid Grid.Row="1" Margin="0,22,0,18">
+
+                <!-- STEP 0 — scanning -->
+                <Grid Visibility="{Binding Step, Converter={StaticResource EqualsToVisible}, ConverterParameter=0}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="40" />
+                        <ColumnDefinition Width="1.1*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid Width="240" Height="240" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <Ellipse Margin="18" Fill="{DynamicResource Brush.ModeAccentFaint}" />
+                        <ctl:ProgressRing Thickness="10" Value="{Binding Progress}" Stroke="{DynamicResource Brush.ModeAccent}" />
+                        <ctl:ProgressRing Margin="26" Thickness="2" IsIndeterminate="{Binding IsAuditing}" Stroke="{DynamicResource Brush.ModeAccentSoft}"
+                                          Track="Transparent" />
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <TextBlock HorizontalAlignment="Center" Style="{StaticResource Text.Metric}" FontSize="44" Text="{Binding ProgressText}" />
+                            <TextBlock HorizontalAlignment="Center" Style="{StaticResource Text.Overline}" Text="SYSTEM AUDIT" />
+                        </StackPanel>
+                    </Grid>
+                    <StackPanel Grid.Column="2" VerticalAlignment="Center" MaxWidth="440" HorizontalAlignment="Left">
+                        <TextBlock Style="{StaticResource Text.Display}" Text="Mapping every leak on this PC" TextWrapping="Wrap" />
+                        <TextBlock Margin="0,8,0,16" Style="{StaticResource Text.Body}"
+                                   Text="Read-only scan. Nothing is changed until you approve it on the next screens." />
+                        <Border Style="{StaticResource Card.Inset}">
+                            <ItemsControl ItemsSource="{Binding AuditLog}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Margin="0,3">
+                                            <TextBlock Style="{StaticResource Text.Icon}" FontSize="10" Text="&#xE73E;" Foreground="{DynamicResource Brush.ModeAccent}" />
+                                            <TextBlock Margin="10,0,0,0" Style="{StaticResource Text.Mono}" FontSize="11" Foreground="{StaticResource Brush.TextSecondary}"
+                                                       Text="{Binding}" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Border>
+                    </StackPanel>
+                </Grid>
+
+                <!-- STEP 1 — scorecard -->
+                <Grid Visibility="{Binding Step, Converter={StaticResource EqualsToVisible}, ConverterParameter=1}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="300" />
+                        <ColumnDefinition Width="24" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Style="{StaticResource Card}" Padding="22">
+                        <StackPanel VerticalAlignment="Center">
+                            <Grid Width="190" Height="190">
+                                <ctl:ProgressRing Thickness="12" Value="{Binding Score}" Stroke="{Binding ScoreBrush}" />
+                                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <TextBlock HorizontalAlignment="Center" Style="{StaticResource Text.Metric}" FontSize="52"
+                                               Foreground="{Binding ScoreBrush}" Text="{Binding Score}" />
+                                    <TextBlock HorizontalAlignment="Center" Style="{StaticResource Text.Mono}" Foreground="{StaticResource Brush.TextMuted}" Text="/ 100" />
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock Margin="0,16,0,0" HorizontalAlignment="Center" Style="{StaticResource Text.Overline}" Text="PRIVACY SCORE" />
+                            <TextBlock HorizontalAlignment="Center" Style="{StaticResource Text.Subtitle}" Foreground="{Binding ScoreBrush}" Text="{Binding ScoreVerdict}" />
+                        </StackPanel>
+                    </Border>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Style="{StaticResource Text.Title}" Text="Your leak scorecard" />
+                        <TextBlock Margin="0,4,0,14" Style="{StaticResource Text.Body}" Text="Here's what Windows is currently sending out, in plain English." />
+                        <ItemsControl ItemsSource="{Binding Categories}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type m:AuditCategory}">
+                                    <Border Style="{StaticResource Card.Inset}" Margin="0,0,0,8" Padding="14,10">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Rectangle x:Name="Bar" Width="3" RadiusX="1.5" RadiusY="1.5" Fill="{StaticResource Brush.Crimson}" />
+                                            <StackPanel Grid.Column="1" Margin="12,0">
+                                                <TextBlock FontSize="13" FontWeight="SemiBold" Text="{Binding Name}" />
+                                                <TextBlock Style="{StaticResource Text.Mono}" FontSize="11" Foreground="{StaticResource Brush.TextSecondary}" Text="{Binding Finding}" />
+                                            </StackPanel>
+                                            <Border x:Name="Sev" Grid.Column="2" Style="{StaticResource Badge}"
+                                                    Background="{StaticResource Brush.CrimsonSoft}" BorderBrush="{StaticResource Brush.CrimsonLine}">
+                                                <TextBlock x:Name="SevText" Style="{StaticResource Badge.Text}" Foreground="{StaticResource Brush.Crimson}" Text="{Binding SeverityText}" />
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                    <DataTemplate.Triggers>
+                                        <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                                            <Setter TargetName="Bar" Property="Fill" Value="{StaticResource Brush.Amber}" />
+                                            <Setter TargetName="Sev" Property="Background" Value="{StaticResource Brush.AmberSoft}" />
+                                            <Setter TargetName="Sev" Property="BorderBrush" Value="{StaticResource Brush.AmberLine}" />
+                                            <Setter TargetName="SevText" Property="Foreground" Value="{StaticResource Brush.Amber}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Severity}" Value="Good">
+                                            <Setter TargetName="Bar" Property="Fill" Value="{StaticResource Brush.Mint}" />
+                                            <Setter TargetName="Sev" Property="Background" Value="{StaticResource Brush.MintSoft}" />
+                                            <Setter TargetName="Sev" Property="BorderBrush" Value="{StaticResource Brush.MintLine}" />
+                                            <Setter TargetName="SevText" Property="Foreground" Value="{StaticResource Brush.Mint}" />
+                                        </DataTrigger>
+                                    </DataTemplate.Triggers>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Grid>
+
+                <!-- STEP 2 — hardening toggle cards -->
+                <Grid Visibility="{Binding Step, Converter={StaticResource EqualsToVisible}, ConverterParameter=2}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid Margin="0,0,0,14">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource Text.Title}" Text="Choose your protections" />
+                            <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Body}" Text="Each card says exactly what changes for you. Every one can be undone from Snapshots." />
+                        </StackPanel>
+                        <StackPanel HorizontalAlignment="Right" VerticalAlignment="Bottom" Orientation="Horizontal">
+                            <TextBlock VerticalAlignment="Center" Style="{StaticResource Text.Mono}" Foreground="{StaticResource Brush.TextSecondary}">
+                                <Run Text="Projected score " /><Run Text="{Binding ProjectedScore, Mode=OneWay}" Foreground="{DynamicResource Brush.ModeAccent}" FontWeight="Bold" /><Run Text="/100" />
+                            </TextBlock>
+                            <Button Margin="14,0,0,0" Style="{StaticResource Button.Chip}" Padding="10,5" Content="Toggle all" Command="{Binding SelectAllCommand}" />
+                        </StackPanel>
+                    </Grid>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding Recommendations}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><UniformGrid Columns="2" VerticalAlignment="Top" /></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type m:AuditRecommendation}">
+                                    <Border x:Name="CardBd" Style="{StaticResource Card}" Margin="0,0,10,10" Padding="16,14">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Margin="0,0,14,0">
+                                                <TextBlock FontSize="13.5" FontWeight="SemiBold" Text="{Binding Title}" />
+                                                <TextBlock Margin="0,3,0,8" Style="{StaticResource Text.Caption}" FontSize="12" TextWrapping="Wrap" Text="{Binding Description}" />
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Border x:Name="Impact" Style="{StaticResource Badge}">
+                                                        <TextBlock x:Name="ImpactText" Style="{StaticResource Badge.Text}" FontWeight="SemiBold" Text="{Binding ImpactTag}" />
+                                                    </Border>
+                                                    <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Style="{StaticResource Text.Mono}" FontSize="11"
+                                                               Foreground="{StaticResource Brush.TextMuted}" Text="{Binding ScoreGain, StringFormat=+{0} pts}" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                            <ToggleButton Grid.Column="1" VerticalAlignment="Top" Style="{StaticResource Toggle.Switch}" IsChecked="{Binding IsSelected}" />
+                                        </Grid>
+                                    </Border>
+                                    <DataTemplate.Triggers>
+                                        <DataTrigger Binding="{Binding Impact}" Value="Low">
+                                            <Setter TargetName="Impact" Property="Background" Value="{StaticResource Brush.AmberSoft}" />
+                                            <Setter TargetName="Impact" Property="BorderBrush" Value="{StaticResource Brush.AmberLine}" />
+                                            <Setter TargetName="ImpactText" Property="Foreground" Value="{StaticResource Brush.Amber}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Impact}" Value="Medium">
+                                            <Setter TargetName="Impact" Property="Background" Value="{StaticResource Brush.CrimsonSoft}" />
+                                            <Setter TargetName="Impact" Property="BorderBrush" Value="{StaticResource Brush.CrimsonLine}" />
+                                            <Setter TargetName="ImpactText" Property="Foreground" Value="{StaticResource Brush.Crimson}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                            <Setter TargetName="CardBd" Property="BorderBrush" Value="{DynamicResource Brush.ModeAccentSoft}" />
+                                        </DataTrigger>
+                                    </DataTemplate.Triggers>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
+
+                <!-- STEP 3 — done -->
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
+                            Visibility="{Binding Step, Converter={StaticResource EqualsToVisible}, ConverterParameter=3}">
+                    <Grid Width="200" Height="200">
+                        <ctl:ProgressRing Thickness="10" Value="{Binding ProjectedScore}" Stroke="{StaticResource Brush.Mint}" />
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <TextBlock HorizontalAlignment="Center" Style="{StaticResource Text.Metric}" FontSize="52" Foreground="{StaticResource Brush.Mint}"
+                                       Text="{Binding ProjectedScore}" />
+                            <TextBlock HorizontalAlignment="Center" Style="{StaticResource Text.Mono}" Foreground="{StaticResource Brush.TextMuted}" Text="/ 100" />
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock Margin="0,22,0,0" HorizontalAlignment="Center" Style="{StaticResource Text.Display}" Text="Zero bits leaked." />
+                    <TextBlock Margin="0,8,0,0" HorizontalAlignment="Center" Style="{StaticResource Text.Body}" TextAlignment="Center">
+                        <Run Text="{Binding SelectedCount, Mode=OneWay}" /><Run Text=" protections are live. A snapshot of your previous settings was saved automatically." />
+                    </TextBlock>
+                </StackPanel>
+            </Grid>
+
+            <!-- ═════ Footer ═════ -->
+            <Grid Grid.Row="2">
+                <Button HorizontalAlignment="Left" Style="{StaticResource Button.Ghost}" Content="Skip setup" Command="{Binding SkipCommand}" />
+                <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                    <Button Style="{StaticResource Button.Outline}" Content="Back" Margin="0,0,10,0" Command="{Binding BackCommand}" />
+                    <Button Style="{StaticResource Button.Primary}" Padding="20,9" Command="{Binding NextCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding PrimaryText}" />
+                            <TextBlock Margin="10,0,0,0" Style="{StaticResource Text.Icon}" FontSize="11" Text="&#xE72A;" Foreground="{StaticResource Brush.TextOnAccent}" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>

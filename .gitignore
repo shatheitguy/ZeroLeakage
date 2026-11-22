@@ -1,0 +1,26 @@
+# ── Windows (.NET / WiX) ──
+windows/**/bin/
+windows/**/obj/
+windows/artifacts/
+*.user
+.vs/
+
+# ── Android (Gradle) ──
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.iml
+*.jks
+*.keystore
+keystore.properties
+
+# ── Build outputs (publish these as release assets, not in git) ──
+*.msi
+*.apk
+*.aab
+
+# ── OS / editor ──
+.DS_Store
+Thumbs.db

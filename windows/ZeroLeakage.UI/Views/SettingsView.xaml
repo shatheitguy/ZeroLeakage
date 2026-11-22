@@ -1,0 +1,153 @@
+<UserControl x:Class="ZeroLeakage.UI.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:m="clr-namespace:ZeroLeakage.UI.Models">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
+        <Grid Margin="8,10,16,22">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="16" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <StackPanel>
+                <TextBlock Style="{StaticResource Text.Title}" Text="Snapshots &amp; Settings" />
+                <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Body}"
+                           Text="Every change ZeroLeakage makes is reversible. Snapshot your system before experimenting and roll back in one click." />
+            </StackPanel>
+
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1.1*" />
+                    <ColumnDefinition Width="14" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- ═════ Snapshots ═════ -->
+                <StackPanel>
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource Text.Overline}" FontSize="11" Foreground="{StaticResource Brush.TextPrimary}" Text="SYSTEM SNAPSHOTS" />
+                            <Grid Margin="0,12,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox Style="{StaticResource TextBox.Input}" Tag="Snapshot name (optional)"
+                                         Text="{Binding NewSnapshotName, UpdateSourceTrigger=PropertyChanged}" />
+                                <Button Grid.Column="1" Margin="8,0,0,0" Style="{StaticResource Button.Primary}" Command="{Binding CreateSnapshotCommand}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Style="{StaticResource Text.Icon}" FontSize="12" Text="&#xE74E;" Foreground="{StaticResource Brush.TextOnAccent}" />
+                                        <TextBlock Margin="8,0,0,0" Text="Create snapshot" />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                            <ProgressBar Style="{StaticResource ProgressBar.Thin}" IsIndeterminate="{Binding IsCreating}" Margin="0,0,0,10"
+                                         Visibility="{Binding IsCreating, Converter={StaticResource BoolToVisible}}" />
+                            <ItemsControl ItemsSource="{Binding Snapshots}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type m:SystemSnapshot}">
+                                        <Border Style="{StaticResource Card.Inset}" Margin="0,0,0,8">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Style="{StaticResource Text.Icon}" FontSize="16" Text="&#xE81C;" Foreground="{DynamicResource Brush.ModeAccent}" />
+                                                <StackPanel Grid.Column="1" Margin="14,0">
+                                                    <TextBlock FontSize="13" FontWeight="SemiBold" Text="{Binding Name}" />
+                                                    <TextBlock Style="{StaticResource Text.Mono}" FontSize="10.5" Foreground="{StaticResource Brush.TextMuted}">
+                                                        <Run Text="{Binding DateText, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding Kind, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding SizeText, Mode=OneWay}" />
+                                                    </TextBlock>
+                                                </StackPanel>
+                                                <Button Grid.Column="2" Style="{StaticResource Button.Chip}" Content="Roll back"
+                                                        Command="{Binding DataContext.RestoreSnapshotCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                        CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}" Margin="0,14,0,0" BorderBrush="{StaticResource Brush.CrimsonLine}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource Brush.Crimson}" Text="Restore Windows defaults" />
+                                <TextBlock Style="{StaticResource Text.Caption}" TextWrapping="Wrap"
+                                           Text="Removes every ZeroLeakage rule, DNS override and service change." />
+                            </StackPanel>
+                            <Button Grid.Column="1" Style="{StaticResource Button.Danger}" Content="Restore defaults" Command="{Binding RestoreDefaultsCommand}" />
+                        </Grid>
+                    </Border>
+                </StackPanel>
+
+                <!-- ═════ Preferences ═════ -->
+                <StackPanel Grid.Column="2">
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource Text.Overline}" FontSize="11" Foreground="{StaticResource Brush.TextPrimary}" Text="UPDATE WINDOW" />
+                            <TextBlock Margin="0,6,0,12" Style="{StaticResource Text.Caption}" TextWrapping="Wrap"
+                                       Text="How long the title-bar Update Window lets Windows Update through before locking back down." />
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton Style="{StaticResource Radio.Chip}" GroupName="UpdateMinutes" Content="15 min"
+                                             IsChecked="{Binding UpdateWindowMinutes, Converter={StaticResource EnumEquals}, ConverterParameter=15}" />
+                                <RadioButton Style="{StaticResource Radio.Chip}" GroupName="UpdateMinutes" Content="30 min"
+                                             IsChecked="{Binding UpdateWindowMinutes, Converter={StaticResource EnumEquals}, ConverterParameter=30}" />
+                                <RadioButton Style="{StaticResource Radio.Chip}" GroupName="UpdateMinutes" Content="60 min"
+                                             IsChecked="{Binding UpdateWindowMinutes, Converter={StaticResource EnumEquals}, ConverterParameter=60}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}" Margin="0,14,0,0">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource Text.Overline}" FontSize="11" Foreground="{StaticResource Brush.TextPrimary}" Text="BEHAVIOUR" />
+                            <Grid Margin="0,14,0,0">
+                                <StackPanel>
+                                    <TextBlock FontSize="13" FontWeight="SemiBold" Text="Hide to tray on close" />
+                                    <TextBlock Style="{StaticResource Text.Caption}" Text="Protection keeps running in the background" />
+                                </StackPanel>
+                                <ToggleButton HorizontalAlignment="Right" Style="{StaticResource Toggle.Switch}" IsChecked="{Binding MinimizeToTray}" />
+                            </Grid>
+                            <Grid Margin="0,14,0,0">
+                                <StackPanel>
+                                    <TextBlock FontSize="13" FontWeight="SemiBold" Text="Start with Windows" />
+                                    <TextBlock Style="{StaticResource Text.Caption}" Text="Launches silently into the tray" />
+                                </StackPanel>
+                                <ToggleButton HorizontalAlignment="Right" Style="{StaticResource Toggle.Switch}" IsChecked="{Binding StartWithWindows}" />
+                            </Grid>
+                            <Grid Margin="0,14,0,0">
+                                <StackPanel>
+                                    <TextBlock FontSize="13" FontWeight="SemiBold" Text="Auto-update definitions" />
+                                    <TextBlock Style="{StaticResource Text.Caption}" Text="Blocklists &amp; AV signatures, every 6 hours" />
+                                </StackPanel>
+                                <ToggleButton HorizontalAlignment="Right" Style="{StaticResource Toggle.Switch}" IsChecked="{Binding AutoUpdateDefinitions}" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}" Margin="0,14,0,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock FontSize="13" FontWeight="SemiBold" Text="System audit" />
+                                <TextBlock Style="{StaticResource Text.Caption}" Text="Re-run the guided privacy scan &amp; hardening wizard" />
+                            </StackPanel>
+                            <Button Grid.Column="1" Style="{StaticResource Button.Outline}" Content="Run audit" Command="{Binding RerunAuditCommand}" />
+                        </Grid>
+                    </Border>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </ScrollViewer>
+</UserControl>

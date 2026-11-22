@@ -1,0 +1,75 @@
+<Window x:Class="ZeroLeakage.UI.Views.ConnectToastWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ZeroLeakage — Connection request"
+        Width="420" SizeToContent="Height"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ResizeMode="NoResize" ShowInTaskbar="False" Topmost="True" ShowActivated="False"
+        FontFamily="{StaticResource Font.UI}" Foreground="{StaticResource Brush.TextPrimary}"
+        UseLayoutRounding="True">
+    <Border x:Name="Root" Margin="14" CornerRadius="16" BorderThickness="1"
+            Background="#F5101219" BorderBrush="{StaticResource Brush.VioletLine}" Opacity="0">
+        <Border.RenderTransform>
+            <TranslateTransform x:Name="Slide" X="440" />
+        </Border.RenderTransform>
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="28" ShadowDepth="0" Opacity="0.65" Color="Black" />
+        </Border.Effect>
+        <Grid>
+            <!-- violet glint -->
+            <Border Height="1" Margin="30,0" VerticalAlignment="Top" Background="{StaticResource Brush.Violet}"
+                    OpacityMask="{StaticResource Mask.HorizontalFade}" />
+            <StackPanel Margin="18,16,18,0">
+                <Grid>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Style="{StaticResource Text.Icon}" FontSize="12" Text="&#xE72E;" Foreground="{StaticResource Brush.Violet}" />
+                        <TextBlock Margin="8,0,0,0" Style="{StaticResource Text.Overline}" Foreground="{StaticResource Brush.Violet}"
+                                   Text="STRICT GUARD · ASK TO CONNECT" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <TextBlock HorizontalAlignment="Right" Style="{StaticResource Text.Mono}" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"
+                               Text="{Binding CountdownText}" />
+                </Grid>
+
+                <Grid Margin="0,14,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Width="46" Height="46" CornerRadius="12" Background="{StaticResource Brush.SurfaceRaised}"
+                            BorderBrush="{StaticResource Brush.BorderStrong}" BorderThickness="1">
+                        <Grid>
+                            <Image Source="{Binding AppIcon}" Width="28" Height="28" RenderOptions.BitmapScalingMode="HighQuality" />
+                            <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" FontFamily="{StaticResource Font.Mono}" FontSize="18"
+                                       FontWeight="Bold" Text="{Binding Initial}"
+                                       Visibility="{Binding HasIcon, Converter={StaticResource BoolToCollapsed}}" />
+                        </Grid>
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+                        <TextBlock FontSize="15" FontWeight="SemiBold" Text="{Binding Request.ProcessName}" />
+                        <TextBlock Style="{StaticResource Text.Mono}" FontSize="10.5" Foreground="{StaticResource Brush.TextMuted}"
+                                   Text="{Binding Request.ProcessPath}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Request.ProcessPath}" />
+                        <Border x:Name="Sig" Margin="0,6,0,0" Style="{StaticResource Badge}">
+                            <TextBlock x:Name="SigText" Style="{StaticResource Badge.Text}" FontWeight="SemiBold" Text="{Binding SignatureText}" />
+                        </Border>
+                    </StackPanel>
+                </Grid>
+
+                <Border Margin="0,14,0,0" Style="{StaticResource Card.Inset}" Padding="12,10">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Text.Overline}" Text="WANTS TO REACH" />
+                        <TextBlock Margin="0,3,0,0" Style="{StaticResource Text.Mono}" FontSize="13" FontWeight="SemiBold" Text="{Binding Request.Destination}" />
+                        <TextBlock Style="{StaticResource Text.Mono}" FontSize="11" Foreground="{StaticResource Brush.TextSecondary}" Text="{Binding EndpointText}" />
+                    </StackPanel>
+                </Border>
+
+                <UniformGrid Columns="3" Margin="0,14,0,14">
+                    <Button Style="{StaticResource Button.Mint}" Content="Allow" Margin="0,0,5,0" Command="{Binding AllowCommand}" />
+                    <Button Style="{StaticResource Button.Outline}" Content="Allow Once" Margin="5,0" Command="{Binding AllowOnceCommand}" />
+                    <Button Style="{StaticResource Button.Danger}" Content="Block" Margin="5,0,0,0" Command="{Binding BlockCommand}" />
+                </UniformGrid>
+            </StackPanel>
+            <ProgressBar VerticalAlignment="Bottom" Margin="16,0,16,8" Height="2" Style="{StaticResource ProgressBar.Thin}"
+                         Foreground="{StaticResource Brush.Violet}" Maximum="1" Value="{Binding Remaining, Mode=OneWay}" />
+        </Grid>
+    </Border>
+</Window>

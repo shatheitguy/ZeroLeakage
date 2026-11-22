@@ -1,0 +1,193 @@
+<Window x:Class="ZeroLeakage.UI.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ctl="clr-namespace:ZeroLeakage.UI.Controls"
+        xmlns:v="clr-namespace:ZeroLeakage.UI.Views"
+        Title="ZeroLeakage"
+        Width="1200" Height="760" MinWidth="1060" MinHeight="680"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource Brush.Canvas}"
+        FontFamily="{StaticResource Font.UI}"
+        Foreground="{StaticResource Brush.TextPrimary}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True">
+
+    <!-- Frameless: we draw our own title bar, DWM still provides snap, shadow & animations. -->
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="48" ResizeBorderThickness="6" GlassFrameThickness="0"
+                      CornerRadius="0" UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
+    <Border x:Name="RootBorder" Background="{StaticResource Brush.Canvas}">
+        <Border.RenderTransform>
+            <ScaleTransform x:Name="RootScale" ScaleX="1" ScaleY="1" />
+        </Border.RenderTransform>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="48" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="76" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Ambient mode-tinted bloom in the top-left corner -->
+            <Ellipse Grid.RowSpan="2" Grid.ColumnSpan="2" Width="720" Height="520" Margin="-260,-280,0,0"
+                     HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False"
+                     Fill="{DynamicResource Brush.ModeAccent}" Opacity="0.07" OpacityMask="{StaticResource Mask.RadialGlow}" />
+
+            <!-- ═══════════════ Custom title bar ═══════════════ -->
+            <Grid Grid.Row="0" Grid.ColumnSpan="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Logo -->
+                <StackPanel Orientation="Horizontal" Margin="24,0,0,0" VerticalAlignment="Center">
+                    <Viewbox Width="24" Height="24">
+                        <Canvas Width="24" Height="24">
+                            <Path Data="{StaticResource Geo.Hexagon}" Stroke="{DynamicResource Brush.ModeAccent}" StrokeThickness="1.8" StrokeLineJoin="Round" />
+                            <Path Data="{StaticResource Geo.Drop}" Fill="{DynamicResource Brush.ModeAccentSoft}" Stroke="{DynamicResource Brush.ModeAccent}" StrokeThickness="1.4" />
+                            <Path Data="{StaticResource Geo.Slash}" Stroke="{DynamicResource Brush.ModeAccent}" StrokeThickness="1.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        </Canvas>
+                    </Viewbox>
+                    <TextBlock Margin="12,0,0,0" VerticalAlignment="Center" FontSize="14.5" FontWeight="SemiBold">
+                        <Run Text="Zero" /><Run Text="Leakage" Foreground="{DynamicResource Brush.ModeAccent}" />
+                    </TextBlock>
+                    <TextBlock Margin="10,1,0,0" VerticalAlignment="Center" Style="{StaticResource Text.Mono}" FontSize="10.5"
+                               Foreground="{StaticResource Brush.TextMuted}" Text="v1.0" />
+                </StackPanel>
+
+                <!-- Live status pill — centred across the whole window -->
+                <Border Grid.ColumnSpan="3" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        CornerRadius="999" Padding="14,6" BorderThickness="1"
+                        Background="#FF0F1219" BorderBrush="{DynamicResource Brush.ModeAccentSoft}">
+                    <StackPanel Orientation="Horizontal">
+                        <Grid Width="10" Height="10" VerticalAlignment="Center">
+                            <Ellipse x:Name="StatusHalo" Fill="{DynamicResource Brush.ModeAccent}" Opacity="0.35" RenderTransformOrigin="0.5,0.5">
+                                <Ellipse.RenderTransform><ScaleTransform x:Name="StatusHaloScale" /></Ellipse.RenderTransform>
+                            </Ellipse>
+                            <Ellipse Width="6" Height="6" Fill="{DynamicResource Brush.ModeAccent}" />
+                        </Grid>
+                        <TextBlock Margin="9,0,0,0" VerticalAlignment="Center" Style="{StaticResource Text.Mono}" FontSize="11.5" FontWeight="Bold"
+                                   Foreground="{DynamicResource Brush.ModeAccent}" Text="ZERO BITS LEAKED" />
+                        <Rectangle Width="1" Height="12" Margin="12,0" Fill="{StaticResource Brush.BorderStrong}" VerticalAlignment="Center" />
+                        <TextBlock VerticalAlignment="Center" Style="{StaticResource Text.Mono}" FontSize="11.5" FontWeight="SemiBold"
+                                   Foreground="{StaticResource Brush.TextSecondary}" Text="{Binding ModeLabel}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Quick actions + caption buttons -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="UpdateWindowButton" WindowChrome.IsHitTestVisibleInChrome="True"
+                            Command="{Binding ToggleUpdateWindowCommand}" Padding="11,6" Margin="0,0,8,0"
+                            ToolTip="Temporarily allow Windows Update traffic, then lock back down automatically">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource Button.Outline}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsUpdateWindowOpen}" Value="True">
+                                        <Setter Property="Background" Value="{StaticResource Brush.AmberSoft}" />
+                                        <Setter Property="BorderBrush" Value="{StaticResource Brush.AmberLine}" />
+                                        <Setter Property="Foreground" Value="{StaticResource Brush.Amber}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Text.Icon}" FontSize="12" Text="&#xE896;" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                            <TextBlock Margin="7,0,0,0" FontFamily="{StaticResource Font.Mono}" FontSize="11.5" Text="{Binding UpdateWindowText}" />
+                        </StackPanel>
+                    </Button>
+                    <Button WindowChrome.IsHitTestVisibleInChrome="True" Style="{StaticResource Button.Outline}"
+                            Command="{Binding RestoreDefaultsCommand}" Padding="11,6" Margin="0,0,14,0"
+                            ToolTip="Remove all ZeroLeakage rules and return to Balanced Shield">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Text.Icon}" FontSize="12" Text="&#xE777;" Foreground="{StaticResource Brush.TextSecondary}" />
+                            <TextBlock Margin="7,0,0,0" FontSize="11.5" Text="Restore Defaults" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button WindowChrome.IsHitTestVisibleInChrome="True" Style="{StaticResource Button.Caption}"
+                            Content="&#xE921;" Click="OnMinimize" ToolTip="Minimize" />
+                    <Button x:Name="MaxButton" WindowChrome.IsHitTestVisibleInChrome="True" Style="{StaticResource Button.Caption}"
+                            Content="&#xE922;" Click="OnMaximize" ToolTip="Maximize" />
+                    <Button WindowChrome.IsHitTestVisibleInChrome="True" Style="{StaticResource Button.Caption.Close}"
+                            Content="&#xE8BB;" Click="OnClose" ToolTip="Hide to tray — protection keeps running" />
+                </StackPanel>
+            </Grid>
+
+            <!-- ═══════════════ Left icon rail ═══════════════ -->
+            <Grid Grid.Row="1" Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <ListBox Style="{StaticResource ListBox.Clean}" Margin="0,12,0,0"
+                         ItemsSource="{Binding NavItems}" SelectedItem="{Binding SelectedNav}"
+                         ItemContainerStyle="{StaticResource ListBoxItem.Rail}"
+                         ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                         KeyboardNavigation.DirectionalNavigation="Cycle" />
+                <StackPanel Grid.Row="1" Margin="0,0,0,18" HorizontalAlignment="Center">
+                    <ctl:ProgressRing Width="30" Height="30" Thickness="2.5" IsIndeterminate="{Binding IsBusy}"
+                                      Stroke="{DynamicResource Brush.ModeAccent}" Value="100" />
+                    <TextBlock Margin="0,6,0,0" HorizontalAlignment="Center" Style="{StaticResource Text.Mono}" FontSize="9"
+                               Foreground="{StaticResource Brush.TextMuted}" Text="CORE" />
+                </StackPanel>
+            </Grid>
+
+            <!-- ═══════════════ Page host ═══════════════ -->
+            <ctl:AnimatedContentControl Grid.Row="1" Grid.Column="1" Content="{Binding CurrentPage}" />
+
+            <!-- ═══════════════ Snackbar ═══════════════ -->
+            <Border Grid.Row="1" Grid.Column="1" Margin="0,0,0,26" HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                    CornerRadius="12" Padding="16,10" BorderThickness="1"
+                    Background="#F2181C28" BorderBrush="{DynamicResource Brush.ModeAccentSoft}"
+                    Visibility="{Binding Snackbar, Converter={StaticResource NotNullToVisible}}">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="24" ShadowDepth="0" Opacity="0.6" Color="Black" />
+                </Border.Effect>
+                <StackPanel Orientation="Horizontal">
+                    <Ellipse Width="6" Height="6" Fill="{DynamicResource Brush.ModeAccent}" VerticalAlignment="Center" />
+                    <TextBlock Margin="10,0,14,0" VerticalAlignment="Center" FontSize="12.5" Text="{Binding Snackbar}" />
+                    <Button Style="{StaticResource Button.Icon}" Width="22" Height="22" FontSize="9" Content="&#xE8BB;"
+                            Command="{Binding DismissSnackbarCommand}" />
+                </StackPanel>
+            </Border>
+
+            <!-- ═══════════════ Post-install audit wizard (full screen below title bar) ═══════════════ -->
+            <v:AuditWizardView Grid.Row="1" Grid.ColumnSpan="2" DataContext="{Binding Wizard}"
+                               Visibility="{Binding IsOpen, Converter={StaticResource BoolToVisible}}" />
+
+            <!-- ═══════════════ Confirm dialog ═══════════════ -->
+            <Grid Grid.RowSpan="2" Grid.ColumnSpan="2" Background="{StaticResource Brush.Overlay}"
+                  Visibility="{Binding Confirm, Converter={StaticResource NotNullToVisible}}">
+                <Border Style="{StaticResource Card}" Width="460" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Padding="24,22" Background="{StaticResource Brush.SurfaceRaised}" BorderBrush="{StaticResource Brush.BorderStrong}">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.7" Color="Black" />
+                    </Border.Effect>
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <Grid Width="34" Height="34">
+                                <Border CornerRadius="10" Background="{StaticResource Brush.CrimsonSoft}" />
+                                <TextBlock Style="{StaticResource Text.Icon}" Text="&#xE7BA;" Foreground="{StaticResource Brush.Crimson}" />
+                            </Grid>
+                            <TextBlock Margin="12,0,0,0" VerticalAlignment="Center" Style="{StaticResource Text.Subtitle}" FontSize="17"
+                                       Text="{Binding Confirm.Title}" />
+                        </StackPanel>
+                        <TextBlock Margin="0,14,0,0" Style="{StaticResource Text.Body}" Text="{Binding Confirm.Message}" />
+                        <StackPanel Margin="0,22,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Style="{StaticResource Button.Outline}" Content="Cancel" Margin="0,0,10,0"
+                                    Command="{Binding ConfirmCancelCommand}" IsCancel="True" />
+                            <Button Style="{StaticResource Button.Danger}" Content="{Binding Confirm.ConfirmText}"
+                                    Command="{Binding ConfirmAcceptCommand}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

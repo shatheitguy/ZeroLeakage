@@ -1,0 +1,254 @@
+<UserControl x:Class="ZeroLeakage.UI.Views.DashboardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ctl="clr-namespace:ZeroLeakage.UI.Controls"
+             xmlns:m="clr-namespace:ZeroLeakage.UI.Models">
+
+    <UserControl.Resources>
+        <DataTemplate x:Key="FeedRow" DataType="{x:Type m:FeedEvent}">
+            <Grid Height="34">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="82" />
+                    <ColumnDefinition Width="86" />
+                    <ColumnDefinition Width="240" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock VerticalAlignment="Center" Style="{StaticResource Text.Mono}" Foreground="{StaticResource Brush.TextMuted}"
+                           Text="{Binding TimeText, StringFormat=[{0}]}" />
+
+                <Border x:Name="Badge" Grid.Column="1" Style="{StaticResource Badge}"
+                        Background="{StaticResource Brush.CrimsonSoft}" BorderBrush="{StaticResource Brush.CrimsonLine}">
+                    <TextBlock x:Name="BadgeText" Style="{StaticResource Badge.Text}" Foreground="{StaticResource Brush.Crimson}"
+                               Text="{Binding VerdictText}" />
+                </Border>
+
+                <TextBlock Grid.Column="2" Margin="4,0,10,0" VerticalAlignment="Center" Style="{StaticResource Text.Mono}"
+                           Text="{Binding ProcessText}" TextTrimming="CharacterEllipsis" ToolTip="{Binding ProcessText}" />
+
+                <TextBlock Grid.Column="3" VerticalAlignment="Center" Style="{StaticResource Text.Mono}" TextTrimming="CharacterEllipsis">
+                    <Run Text="→ " Foreground="{StaticResource Brush.TextMuted}" /><Run Text="{Binding DestinationText, Mode=OneWay}" Foreground="{StaticResource Brush.TextSecondary}" />
+                </TextBlock>
+
+                <Border Grid.Column="4" Margin="10,0,0,0" CornerRadius="6" Padding="8,2" VerticalAlignment="Center"
+                        Background="#FF141824" BorderBrush="{StaticResource Brush.Border}" BorderThickness="1">
+                    <TextBlock FontSize="11" Foreground="{StaticResource Brush.TextSecondary}" Text="{Binding Category}" />
+                </Border>
+
+                <StackPanel x:Name="Actions" Grid.Column="5" Orientation="Horizontal" Margin="10,0,0,0" Visibility="Hidden">
+                    <Button Style="{StaticResource Button.Chip}" Content="Block Domain" Margin="0,0,6,0"
+                            Command="{Binding DataContext.BlockDomainCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                            CommandParameter="{Binding}" />
+                    <Button Style="{StaticResource Button.Chip.Danger}" Content="Kill App Network"
+                            Command="{Binding DataContext.KillAppNetworkCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                            CommandParameter="{Binding}" />
+                </StackPanel>
+            </Grid>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding Verdict}" Value="Allowed">
+                    <Setter TargetName="Badge" Property="Background" Value="{StaticResource Brush.MintSoft}" />
+                    <Setter TargetName="Badge" Property="BorderBrush" Value="{StaticResource Brush.MintLine}" />
+                    <Setter TargetName="BadgeText" Property="Foreground" Value="{StaticResource Brush.Mint}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Verdict}" Value="Prompted">
+                    <Setter TargetName="Badge" Property="Background" Value="{StaticResource Brush.VioletSoft}" />
+                    <Setter TargetName="Badge" Property="BorderBrush" Value="{StaticResource Brush.VioletLine}" />
+                    <Setter TargetName="BadgeText" Property="Foreground" Value="{StaticResource Brush.Violet}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                    <Setter TargetName="Actions" Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid Margin="8,10,24,22">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="14" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="14" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ═══════════════ Hero: 3-mode switcher + radial pulse ═══════════════ -->
+        <Grid>
+            <Border Style="{StaticResource Card}" Padding="20,16,20,16">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="22" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="22" />
+                        <ColumnDefinition Width="210" />
+                    </Grid.ColumnDefinitions>
+
+                    <ctl:ShieldPulse VerticalAlignment="Center" AccentColor="{Binding Shell.ModeColor}" />
+
+                    <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Text.Overline}" Text="ACTIVE PROTECTION" VerticalAlignment="Center" />
+                            <Border Margin="10,0,0,0" CornerRadius="6" Padding="6,1" Background="{DynamicResource Brush.ModeAccentSoft}">
+                                <TextBlock FontFamily="{StaticResource Font.Mono}" FontSize="9.5" FontWeight="Bold"
+                                           Foreground="{DynamicResource Brush.ModeAccent}" Text="● LIVE" />
+                            </Border>
+                        </StackPanel>
+                        <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Display}" Text="{Binding Shell.ModeTitle}" />
+                        <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Body}" MaxWidth="620" HorizontalAlignment="Left"
+                                   Text="{Binding Shell.ModeDescription}" />
+                        <ctl:ModeSwitcher Margin="0,14,0,0" Mode="{Binding Shell.Mode, Mode=TwoWay}" />
+                    </StackPanel>
+
+                    <!-- Bits-leaked readout -->
+                    <Border Grid.Column="4" Style="{StaticResource Card.Inset}" VerticalAlignment="Stretch" Padding="16,14">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Style="{StaticResource Text.Overline}" Text="BITS LEAKED" />
+                            <TextBlock Grid.Row="1" Margin="0,2,0,0" Style="{StaticResource Text.Metric}" FontSize="42"
+                                       Foreground="{DynamicResource Brush.ModeAccent}" Text="0">
+                                <TextBlock.Effect>
+                                    <DropShadowEffect BlurRadius="18" ShadowDepth="0" Opacity="0.6" Color="{DynamicResource Color.ModeAccent}" />
+                                </TextBlock.Effect>
+                            </TextBlock>
+                            <TextBlock Grid.Row="2" Style="{StaticResource Text.Caption}">
+                                <Run Text="session uptime " /><Run Text="{Binding UptimeText, Mode=OneWay}" FontFamily="{StaticResource Font.Mono}" />
+                            </TextBlock>
+                            <Rectangle Grid.Row="3" Style="{StaticResource Divider}" VerticalAlignment="Center" Margin="0,10" />
+                            <Grid Grid.Row="4">
+                                <TextBlock Style="{StaticResource Text.Caption}" Text="Blocked this session" />
+                                <TextBlock HorizontalAlignment="Right" Style="{StaticResource Text.Mono}" Foreground="{StaticResource Brush.Crimson}"
+                                           Text="{Binding BlockedSessionText}" />
+                            </Grid>
+                            <Grid Grid.Row="5" Margin="0,4,0,0">
+                                <TextBlock Style="{StaticResource Text.Caption}" Text="Allowed (clean)" />
+                                <TextBlock HorizontalAlignment="Right" Style="{StaticResource Text.Mono}" Foreground="{StaticResource Brush.Mint}"
+                                           Text="{Binding AllowedSessionText}" />
+                            </Grid>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+            <Border Height="1" Margin="40,0" VerticalAlignment="Top" Background="{DynamicResource Brush.ModeAccent}"
+                    Opacity="0.8" OpacityMask="{StaticResource Mask.HorizontalFade}" IsHitTestVisible="False" />
+        </Grid>
+
+        <!-- ═══════════════ Bento metric cards ═══════════════ -->
+        <Grid Grid.Row="2" Height="148">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="14" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="14" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="14" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <ctl:MetricCard Grid.Column="0" Title="TELEMETRY PURGED" Glyph="&#xE9D9;" Badge="OS"
+                            Value="{Binding TelemetryBlockedText}" Unit="requests"
+                            Caption=".etl trace logs wiped" SecondaryValue="{Binding EtlWipedText}"
+                            Accent="{StaticResource Brush.Crimson}" />
+
+            <ctl:MetricCard Grid.Column="2" Title="DNS TRACKERS DROPPED" Glyph="&#xE774;" Badge="DoH"
+                            Value="{Binding DnsBlockedText}" Unit="domains"
+                            Caption="Encrypted DoH latency" SecondaryValue="{Binding DohLatencyText}"
+                            Accent="{StaticResource Brush.Violet}" />
+
+            <ctl:MetricCard Grid.Column="4" Title="FIREWALL LOCKDOWN" Glyph="&#xE72E;" Badge="CORE"
+                            Value="{Binding FirewallRulesText}" Unit="rules"
+                            Caption="Blocked .exe attempts" SecondaryValue="{Binding ExeBlockedText}"
+                            Accent="{DynamicResource Brush.ModeAccent}" />
+
+            <ctl:MetricCard Grid.Column="6" Title="DEEPSCAN ANTIVIRUS" Glyph="&#xEA18;" Badge="{Binding QuarantineBadge}"
+                            Value="{Binding AvStatusText}" Unit="real-time"
+                            Caption="Last scan" SecondaryValue="{Binding LastScanText}"
+                            Accent="{StaticResource Brush.Mint}" />
+        </Grid>
+
+        <!-- ═══════════════ Live packet & DNS feed ═══════════════ -->
+        <Border Grid.Row="4" Style="{StaticResource Card}" Padding="16,14,10,8">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Header / toolbar -->
+                <Grid Margin="0,0,6,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="260" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Ellipse x:Name="LiveDot" Width="8" Height="8" Fill="{DynamicResource Brush.ModeAccent}" VerticalAlignment="Center">
+                            <Ellipse.Triggers>
+                                <EventTrigger RoutedEvent="Loaded">
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetProperty="Opacity" From="1" To="0.25" Duration="0:0:0.8"
+                                                             AutoReverse="True" RepeatBehavior="Forever" />
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </EventTrigger>
+                            </Ellipse.Triggers>
+                        </Ellipse>
+                        <TextBlock Margin="10,0,0,0" Style="{StaticResource Text.Overline}" FontSize="11" Foreground="{StaticResource Brush.TextPrimary}"
+                                   Text="LIVE PACKET &amp; DNS FEED" VerticalAlignment="Center" />
+                        <TextBlock Margin="12,0,0,0" Style="{StaticResource Text.Mono}" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"
+                                   Text="{Binding EventsPerSecondText}" VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="0,0,10,0" VerticalAlignment="Center">
+                        <RadioButton Style="{StaticResource Radio.Chip}" Content="All" GroupName="FeedFilter"
+                                     IsChecked="{Binding Filter, Converter={StaticResource EnumEquals}, ConverterParameter=All}" />
+                        <RadioButton Style="{StaticResource Radio.Chip}" Content="Blocked" GroupName="FeedFilter"
+                                     IsChecked="{Binding Filter, Converter={StaticResource EnumEquals}, ConverterParameter=Blocked}" />
+                        <RadioButton Style="{StaticResource Radio.Chip}" Content="Allowed" GroupName="FeedFilter"
+                                     IsChecked="{Binding Filter, Converter={StaticResource EnumEquals}, ConverterParameter=Allowed}" />
+                    </StackPanel>
+
+                    <TextBox Grid.Column="3" Style="{StaticResource TextBox.Search}" Tag="Filter process, domain, category…"
+                             Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=120}" />
+
+                    <StackPanel Grid.Column="4" Orientation="Horizontal" Margin="8,0,0,0">
+                        <Button Style="{StaticResource Button.Chip}" Padding="10,7" Content="{Binding PauseText}" Command="{Binding TogglePauseCommand}" />
+                        <Button Style="{StaticResource Button.Icon}" Margin="4,0,0,0" Content="&#xE74D;" ToolTip="Clear feed"
+                                Command="{Binding ClearFeedCommand}" />
+                    </StackPanel>
+                </Grid>
+
+                <!-- Column headers -->
+                <Grid Grid.Row="1" Margin="10,0,16,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="82" />
+                        <ColumnDefinition Width="86" />
+                        <ColumnDefinition Width="240" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Style="{StaticResource Text.Overline}" FontSize="9.5" Text="TIME" />
+                    <TextBlock Grid.Column="1" Style="{StaticResource Text.Overline}" FontSize="9.5" Text="VERDICT" />
+                    <TextBlock Grid.Column="2" Margin="4,0,0,0" Style="{StaticResource Text.Overline}" FontSize="9.5" Text="PROCESS" />
+                    <TextBlock Grid.Column="3" Style="{StaticResource Text.Overline}" FontSize="9.5" Text="DESTINATION · CATEGORY" />
+                </Grid>
+
+                <ListBox Grid.Row="2" Style="{StaticResource ListBox.Clean}"
+                         ItemsSource="{Binding FeedView}" ItemTemplate="{StaticResource FeedRow}"
+                         ItemContainerStyle="{StaticResource ListBoxItem.Row}" />
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>
