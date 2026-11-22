@@ -1,0 +1,66 @@
+package filter
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestParseLine(t *testing.T) {
+	cases := []struct {
+		in     string
+		suffix bool
+		want   Rule
+		ok     bool
+	}{
+		{"||doubleclick.net^", false, Rule{BlockSuffix, "doubleclick.net"}, true},
+		{"||ads.example.com^$important", false, Rule{BlockSuffix, "ads.example.com"}, true},
+		{"@@||good.example.com^", false, Rule{AllowSuffix, "good.example.com"}, true},
+		{"0.0.0.0 tracker.example.org", false, Rule{BlockExact, "tracker.example.org"}, true},
+		{"127.0.0.1 localhost", false, Rule{}, false},
+		{"telemetry.example.net", true, Rule{BlockSuffix, "telemetry.example.net"}, true},
+		{"! comment", false, Rule{}, false},
+		{"example.com##.banner", false, Rule{}, false},
+		{"||example.com/path^", false, Rule{}, false},
+		{"||example.com^$dnstype=AAAA", false, Rule{}, false},
+		{"/regex.*/", false, Rule{}, false},
+		{"1.2.3.4", false, Rule{}, false},
+		{"com", false, Rule{}, false},
+	}
+	for _, c := range cases {
+		got, ok := ParseLine(c.in, c.suffix)
+		if ok != c.ok || got != c.want {
+			t.Errorf("ParseLine(%q) = %v,%v want %v,%v", c.in, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+func TestMatchPrecedence(t *testing.T) {
+	b := NewBuilder()
+	b.AddList(Source{"a", "List A", "Ads"}, strings.NewReader("||ads.com^\n0.0.0.0 exact.org\n@@||ok.ads.com^\n"), false)
+	idx := b.Build()
+
+	if m := idx.Match("x.ads.com", nil, nil); m == nil || !m.Blocked || m.Matched != "ads.com" {
+		t.Fatalf("suffix block failed: %+v", m)
+	}
+	if m := idx.Match("ok.ads.com", nil, nil); m == nil || m.Blocked {
+		t.Fatalf("list exception failed: %+v", m)
+	}
+	if m := idx.Match("exact.org", nil, nil); m == nil || !m.Blocked {
+		t.Fatalf("exact block failed: %+v", m)
+	}
+	if m := idx.Match("sub.exact.org", nil, nil); m != nil {
+		t.Fatalf("exact rule must not match subdomain: %+v", m)
+	}
+	if m := idx.Match("x.ads.com", map[string]bool{"ads.com": true}, nil); m == nil || m.Blocked || m.ListID != UserAllowID {
+		t.Fatalf("user allow must win: %+v", m)
+	}
+	if m := idx.Match("google.com", nil, map[string]bool{"google.com": true}); m == nil || !m.Blocked || m.ListID != UserBlockID {
+		t.Fatalf("user block failed: %+v", m)
+	}
+	if m := idx.Match("google.com", nil, nil); m != nil {
+		t.Fatalf("unlisted domain matched: %+v", m)
+	}
+	if idx.TotalRules() != 3 {
+		t.Fatalf("TotalRules = %d", idx.TotalRules())
+	}
+}

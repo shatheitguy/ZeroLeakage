@@ -1,0 +1,17 @@
+services:
+  zeroleakage:
+    build: .
+    image: zeroleakage-server:latest
+    container_name: zeroleakage
+    restart: unless-stopped
+    ports:
+      - "53:53/udp"     # LAN DNS: point your router's DNS at this host
+      - "53:53/tcp"
+      - "3080:3080/tcp" # dashboard + API + DoH over HTTP (put a TLS reverse proxy in front for remote use)
+      - "853:853/tcp"   # DNS-over-TLS / Android Private DNS (needs /data/tls.crt + tls.key)
+      - "8443:443/tcp"  # DoH + dashboard over HTTPS (needs the same cert)
+    volumes:
+      - ./data:/data
+    environment:
+      ZL_TRUST_PROXY: "false"   # "true" only if a reverse proxy you control sets X-Forwarded-For
+      TZ: Asia/Dubai

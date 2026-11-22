@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>ZeroLeakage-Server</Name>
+  <Repository>ghcr.io/shatheitguy/zeroleakage-server:latest</Repository>
+  <Registry>https://github.com/shatheitguy/ZeroLeakage/pkgs/container/zeroleakage-server</Registry>
+  <Network>br0</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/shatheitguy/ZeroLeakage/issues</Support>
+  <Project>https://github.com/shatheitguy/ZeroLeakage</Project>
+  <Overview>ZeroLeakage Server: network-wide DNS filtering (AdGuard Home / Pi-hole style) for every device on your LAN, plus encrypted DoH / DoT so your phones and laptops stay protected on mobile data. AdGuard-style lists (OISD, HaGeZi, StevenBlack...), per-device rules, CNAME-cloaking protection, query log and an optional sign-in that syncs rules with the ZeroLeakage Windows and Android apps.&#xD;
+&#xD;
+Give it its own IP (br0) so it can use port 53, then set your router's DNS server to that IP. Open the WebUI to create the admin account.</Overview>
+  <Category>Network:DNS Security:</Category>
+  <WebUI>http://[IP]:[PORT:3080]/</WebUI>
+  <Icon>https://raw.githubusercontent.com/shatheitguy/ZeroLeakage/main/docs/assets/logo-512.png</Icon>
+  <ExtraParams>--restart unless-stopped</ExtraParams>
+  <Config Name="Data" Target="/data" Default="/mnt/user/appdata/zeroleakage" Mode="rw" Description="Database, downloaded lists and optional tls.crt / tls.key" Type="Path" Display="always" Required="true">/mnt/user/appdata/zeroleakage</Config>
+  <Config Name="DNS (UDP)" Target="53" Default="53" Mode="udp" Description="Plain DNS for your LAN" Type="Port" Display="always" Required="true">53</Config>
+  <Config Name="DNS (TCP)" Target="53" Default="53" Mode="tcp" Description="Plain DNS over TCP" Type="Port" Display="always" Required="true">53</Config>
+  <Config Name="Dashboard / API / DoH" Target="3080" Default="3080" Mode="tcp" Description="Web dashboard, REST API and DoH over HTTP (use a TLS reverse proxy for remote access)" Type="Port" Display="always" Required="true">3080</Config>
+  <Config Name="DNS-over-TLS" Target="853" Default="853" Mode="tcp" Description="Android Private DNS / DoT (needs tls.crt + tls.key in /data)" Type="Port" Display="always" Required="false">853</Config>
+  <Config Name="HTTPS" Target="443" Default="8443" Mode="tcp" Description="DoH + dashboard over HTTPS (needs tls.crt + tls.key in /data)" Type="Port" Display="always" Required="false">8443</Config>
+  <Config Name="Trust reverse proxy" Target="ZL_TRUST_PROXY" Default="false" Mode="" Description="true only if your own reverse proxy sets X-Forwarded-For" Type="Variable" Display="advanced" Required="false">false</Config>
+  <Config Name="TZ" Target="TZ" Default="Asia/Dubai" Mode="" Description="Time zone for the query log" Type="Variable" Display="advanced" Required="false">Asia/Dubai</Config>
+</Container>

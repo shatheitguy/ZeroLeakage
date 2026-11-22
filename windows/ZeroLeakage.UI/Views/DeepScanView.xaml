@@ -6,25 +6,25 @@
     <Grid Margin="8,10,24,22">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="16" />
+            <RowDefinition Height="14" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
         <StackPanel>
             <TextBlock Style="{StaticResource Text.Title}" Text="DeepScan AV" />
             <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Body}" TextWrapping="Wrap"
-                       Text="Powered by Microsoft Defender, the antivirus engine built into Windows. Every scan, detection and quarantine shown here comes straight from Defender." />
+                       Text="Microsoft Defender is your always-on shield. Add ClamAV as an on-demand second opinion. Every scan and detection here is real." />
         </StackPanel>
 
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="0.9*" />
+                <ColumnDefinition Width="0.95*" />
                 <ColumnDefinition Width="14" />
-                <ColumnDefinition Width="1.2*" />
+                <ColumnDefinition Width="1.15*" />
             </Grid.ColumnDefinitions>
 
             <!-- ═════ Scanner ═════ -->
-            <Border Style="{StaticResource Card}" Padding="22">
+            <Border Style="{StaticResource Card}" Padding="20">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -34,82 +34,37 @@
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <Grid>
-                        <StackPanel>
-                            <TextBlock FontSize="13" FontWeight="SemiBold" Text="Real-time protection" />
-                            <TextBlock Style="{StaticResource Text.Caption}" Text="Managed by Microsoft Defender" />
+                    <!-- Engine picker -->
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Text.Overline}" Text="SCAN WITH" />
+                        <StackPanel Margin="0,8,0,0" Orientation="Horizontal" IsEnabled="{Binding IsScanning, Converter={StaticResource InverseBool}}">
+                            <RadioButton Style="{StaticResource Radio.Chip}" Content="Defender" Margin="0,0,6,0" GroupName="engine"
+                                         IsChecked="{Binding Engine, Converter={StaticResource EnumEquals}, ConverterParameter=Defender}" />
+                            <RadioButton Style="{StaticResource Radio.Chip}" Content="ClamAV" Margin="0,0,6,0" GroupName="engine"
+                                         IsChecked="{Binding Engine, Converter={StaticResource EnumEquals}, ConverterParameter=ClamAV}" />
+                            <RadioButton Style="{StaticResource Radio.Chip}" Content="Both engines" GroupName="engine"
+                                         IsChecked="{Binding Engine, Converter={StaticResource EnumEquals}, ConverterParameter=Both}" />
                         </StackPanel>
-                        <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                            <Border Style="{StaticResource Badge}" Margin="0,0,8,0">
-                                <TextBlock Style="{StaticResource Badge.Text}" Text="{Binding RealtimeText}" />
-                            </Border>
-                            <Button Style="{StaticResource Button.Chip}" Content="Manage" Command="{Binding OpenRealtimeSettingsCommand}"
-                                    ToolTip="Open Windows Security → Virus &amp; threat protection settings" />
-                        </StackPanel>
-                    </Grid>
+                    </StackPanel>
 
-                    <Grid Grid.Row="1" Width="210" Height="210" Margin="0,12" HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <Ellipse Fill="{DynamicResource Brush.ModeAccentFaint}" Margin="14" />
-                        <ctl:ProgressRing Thickness="10" Value="100" IsIndeterminate="{Binding IsScanning}" Stroke="{StaticResource Brush.Mint}" />
-                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                            <TextBlock HorizontalAlignment="Center" Style="{StaticResource Text.Metric}" FontSize="40" Text="{Binding ProgressText}" />
-                            <TextBlock HorizontalAlignment="Center" Style="{StaticResource Text.Overline}" Text="{Binding ScanKindText}" />
-                        </StackPanel>
-                    </Grid>
+                    <!-- Radar -->
+                    <ctl:ScanRadar Grid.Row="1" Width="230" Height="230" Margin="0,10" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   IsScanning="{Binding IsScanning}" Alert="{Binding HasActiveThreats}" Activity="{Binding FilesScanned}"
+                                   CenterText="{Binding ProgressText}" CaptionText="{Binding ScanKindText}" />
 
                     <StackPanel Grid.Row="2">
                         <TextBlock HorizontalAlignment="Center" FontSize="13" FontWeight="SemiBold" Text="{Binding StatusText}" TextAlignment="Center" TextWrapping="Wrap" />
-                        <!-- Antivirus definitions (Microsoft Defender security intelligence) -->
-                        <Border Style="{StaticResource Card.Inset}" Margin="0,14,0,0" Padding="12,9">
-                            <StackPanel>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <Grid Width="30" Height="30">
-                                        <Border CornerRadius="9" Background="{StaticResource Brush.VioletSoft}" />
-                                        <TextBlock Style="{StaticResource Text.Icon}" FontSize="13" Text="&#xE83D;" Foreground="{StaticResource Brush.Violet}" />
-                                    </Grid>
-                                    <StackPanel Grid.Column="1" Margin="10,0" VerticalAlignment="Center">
-                                        <TextBlock Style="{StaticResource Text.Mono}" FontSize="11.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis">
-                                            <Run Text="Definitions " Foreground="{StaticResource Brush.TextSecondary}" /><Run Text="{Binding SignatureVersionText, Mode=OneWay}" />
-                                        </TextBlock>
-                                        <TextBlock FontSize="11" TextTrimming="CharacterEllipsis" Text="{Binding SignatureAgeText}" ToolTip="{Binding SignatureText}">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Caption}">
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding SignaturesStale}" Value="True">
-                                                            <Setter Property="Foreground" Value="{StaticResource Brush.Amber}" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                    </StackPanel>
-                                    <Button Grid.Column="2" Style="{StaticResource Button.Chip}" VerticalAlignment="Center"
-                                            Command="{Binding UpdateDefinitionsCommand}"
-                                            ToolTip="Download the latest Microsoft Defender security intelligence now">
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Style="{StaticResource Text.Icon}" FontSize="10.5" Text="&#xE896;" Foreground="{StaticResource Brush.TextSecondary}" />
-                                            <TextBlock Margin="6,0,0,0" Text="Update definitions" />
-                                        </StackPanel>
-                                    </Button>
-                                </Grid>
-                                <ProgressBar Margin="0,9,0,0" Style="{StaticResource ProgressBar.Thin}" IsIndeterminate="{Binding IsUpdatingDefinitions}"
-                                             Visibility="{Binding IsUpdatingDefinitions, Converter={StaticResource BoolToVisible}}" />
-                                <TextBlock Margin="40,6,0,0" Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Text="{Binding DefinitionsStatus}"
-                                           Visibility="{Binding DefinitionsStatus, Converter={StaticResource NotNullToVisible}}" />
-                            </StackPanel>
-                        </Border>
+                        <TextBlock Margin="0,4,0,0" HorizontalAlignment="Center" Style="{StaticResource Text.Mono}" FontSize="10.5"
+                                   Foreground="{StaticResource Brush.Mint}" Text="{Binding FilesScannedText}" />
+                        <TextBlock Margin="0,2,0,0" HorizontalAlignment="Center" Style="{StaticResource Text.Mono}" FontSize="10"
+                                   Foreground="{StaticResource Brush.TextMuted}" Text="{Binding CurrentFile}" TextTrimming="CharacterEllipsis" MaxWidth="380" />
                     </StackPanel>
 
-                    <UniformGrid Grid.Row="3" Columns="2" Margin="0,16,0,0">
+                    <UniformGrid Grid.Row="3" Columns="2" Margin="0,14,0,0">
                         <Border Style="{StaticResource Card.Inset}" Margin="0,0,6,0">
                             <StackPanel>
-                                <TextBlock Style="{StaticResource Text.Overline}" Text="LAST SCAN" />
-                                <TextBlock Style="{StaticResource Text.Mono}" FontSize="13" FontWeight="SemiBold" Text="{Binding LastScanText}" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Style="{StaticResource Text.Overline}" Text="LAST DEFENDER SCAN" />
+                                <TextBlock Style="{StaticResource Text.Mono}" FontSize="12.5" FontWeight="SemiBold" Text="{Binding LastScanText}" TextTrimming="CharacterEllipsis" />
                             </StackPanel>
                         </Border>
                         <Border Style="{StaticResource Card.Inset}" Margin="6,0,0,0">
@@ -124,8 +79,14 @@
                     <Grid Grid.Row="4" Margin="0,14,0,0">
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
                                     Visibility="{Binding IsScanning, Converter={StaticResource BoolToCollapsed}}">
-                            <Button Style="{StaticResource Button.Mint}" Content="Quick scan" Margin="0,0,10,0" Command="{Binding QuickScanCommand}" />
-                            <Button Style="{StaticResource Button.Outline}" Content="Full scan" Command="{Binding FullScanCommand}" />
+                            <Button Style="{StaticResource Button.Mint}" Content="Quick scan" Margin="0,0,8,0" Command="{Binding QuickScanCommand}" />
+                            <Button Style="{StaticResource Button.Outline}" Content="Full scan" Margin="0,0,8,0" Command="{Binding FullScanCommand}" />
+                            <Button Style="{StaticResource Button.Outline}" Command="{Binding ScanFolderCommand}" ToolTip="Scan a folder or USB drive">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Style="{StaticResource Text.Icon}" FontSize="12" Text="&#xE8B7;" />
+                                    <TextBlock Margin="6,0,0,0" Text="Folder…" />
+                                </StackPanel>
+                            </Button>
                         </StackPanel>
                         <Button HorizontalAlignment="Center" Style="{StaticResource Button.Danger}" Content="Cancel scan"
                                 Command="{Binding CancelScanCommand}"
@@ -134,76 +95,209 @@
                 </Grid>
             </Border>
 
-            <!-- ═════ Defender threat history ═════ -->
-            <Border Grid.Column="2" Style="{StaticResource Card}" Padding="16,14,8,10">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    <Grid Margin="2,0,8,12">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Style="{StaticResource Text.Icon}" FontSize="14" Text="&#xE72E;" Foreground="{StaticResource Brush.Violet}" />
-                            <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Style="{StaticResource Text.Overline}" FontSize="11"
-                                       Foreground="{StaticResource Brush.TextPrimary}" Text="THREAT HISTORY" />
-                        </StackPanel>
-                        <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
-                            <Button Style="{StaticResource Button.Chip.Danger}" Content="Remove active threats" Margin="0,0,6,0"
-                                    Command="{Binding RemoveThreatsCommand}"
-                                    Visibility="{Binding HasActiveThreats, Converter={StaticResource BoolToVisible}}" />
-                            <Button Style="{StaticResource Button.Chip}" Content="Refresh" Margin="0,0,6,0" Command="{Binding RefreshCommand}" />
-                            <Button Style="{StaticResource Button.Chip}" Content="Windows Security" Command="{Binding OpenSecurityCommand}" />
-                        </StackPanel>
-                    </Grid>
+            <!-- ═════ Engines + results ═════ -->
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="14" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
 
-                    <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center"
-                                Visibility="{Binding Detections.Count, Converter={StaticResource ZeroToVisible}}">
-                        <TextBlock HorizontalAlignment="Center" Style="{StaticResource Text.Icon}" FontSize="34" Text="&#xE73E;" Foreground="{StaticResource Brush.Mint}" />
-                        <TextBlock Margin="0,10,0,0" HorizontalAlignment="Center" Style="{StaticResource Text.Subtitle}" Text="No threats detected" />
-                        <TextBlock HorizontalAlignment="Center" Style="{StaticResource Text.Caption}" Text="Microsoft Defender has no detections on this PC." />
+                <Border Style="{StaticResource Card}" Padding="16,14">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Text.Overline}" Foreground="{StaticResource Brush.TextPrimary}" Text="ENGINES" />
+
+                        <!-- Microsoft Defender -->
+                        <Grid Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid Width="32" Height="32" VerticalAlignment="Top">
+                                <Border CornerRadius="9" Background="{StaticResource Brush.MintSoft}" />
+                                <TextBlock Style="{StaticResource Text.Icon}" FontSize="14" Text="&#xE83D;" Foreground="{StaticResource Brush.Mint}" />
+                            </Grid>
+                            <StackPanel Grid.Column="1" Margin="10,0">
+                                <TextBlock FontSize="13" FontWeight="SemiBold">
+                                    <Run Text="Microsoft Defender" /><Run Text="  · real-time " Foreground="{StaticResource Brush.TextMuted}" FontWeight="Normal" /><Run Text="{Binding RealtimeText, Mode=OneWay}" Foreground="{StaticResource Brush.Mint}" />
+                                </TextBlock>
+                                <TextBlock Style="{StaticResource Text.Mono}" FontSize="10.5" Foreground="{StaticResource Brush.TextSecondary}" TextTrimming="CharacterEllipsis">
+                                    <Run Text="Definitions " /><Run Text="{Binding SignatureVersionText, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding SignatureAgeText, Mode=OneWay}" />
+                                </TextBlock>
+                                <TextBlock Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Text="{Binding DefinitionsStatus}"
+                                           Visibility="{Binding DefinitionsStatus, Converter={StaticResource NotNullToVisible}}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top">
+                                <Button Style="{StaticResource Button.Chip}" Content="Update" Margin="0,0,6,0" Command="{Binding UpdateDefinitionsCommand}"
+                                        ToolTip="Download the latest Microsoft Defender definitions now" />
+                                <Button Style="{StaticResource Button.Chip}" Content="Manage" Command="{Binding OpenRealtimeSettingsCommand}"
+                                        ToolTip="Windows Security → Virus &amp; threat protection settings" />
+                            </StackPanel>
+                        </Grid>
+                        <ProgressBar Margin="42,6,0,0" Style="{StaticResource ProgressBar.Thin}" IsIndeterminate="{Binding IsUpdatingDefinitions}"
+                                     Visibility="{Binding IsUpdatingDefinitions, Converter={StaticResource BoolToVisible}}" />
+
+                        <Border Margin="0,12" Height="1" Background="{StaticResource Brush.Border}" />
+
+                        <!-- ClamAV -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid Width="32" Height="32" VerticalAlignment="Top">
+                                <Border CornerRadius="9" Background="{StaticResource Brush.VioletSoft}" />
+                                <TextBlock Style="{StaticResource Text.Icon}" FontSize="14" Text="&#xE721;" Foreground="{StaticResource Brush.Violet}" />
+                            </Grid>
+                            <StackPanel Grid.Column="1" Margin="10,0">
+                                <TextBlock FontSize="13" FontWeight="SemiBold">
+                                    <Run Text="ClamAV" /><Run Text="  · on-demand second opinion" Foreground="{StaticResource Brush.TextMuted}" FontWeight="Normal" />
+                                </TextBlock>
+                                <TextBlock Style="{StaticResource Text.Mono}" FontSize="10.5" Foreground="{StaticResource Brush.TextSecondary}" TextTrimming="CharacterEllipsis"
+                                           Text="{Binding ClamVersionText}" ToolTip="{Binding ClamDbAgeText}" />
+                                <TextBlock Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Text="{Binding ClamStatus}"
+                                           Visibility="{Binding ClamStatus, Converter={StaticResource NotNullToVisible}}" />
+                                <TextBlock Style="{StaticResource Text.Caption}" TextWrapping="Wrap"
+                                           Visibility="{Binding ClamNotInstalled, Converter={StaticResource BoolToVisible}}"
+                                           Text="Open-source engine by Cisco Talos. Downloaded once (about 500 MB with signatures), then kept up to date daily. Scans when you ask." />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top">
+                                <Button Style="{StaticResource Button.Chip}" Content="Enable ClamAV" Command="{Binding EnableClamCommand}"
+                                        Visibility="{Binding ClamNotInstalled, Converter={StaticResource BoolToVisible}}" />
+                                <Button Style="{StaticResource Button.Chip}" Content="Update" Margin="0,0,6,0" Command="{Binding UpdateClamCommand}"
+                                        Visibility="{Binding ClamInstalled, Converter={StaticResource BoolToVisible}}" ToolTip="Update the ClamAV engine and its signatures" />
+                                <Button Style="{StaticResource Button.Chip.Danger}" Content="Remove" Command="{Binding RemoveClamCommand}"
+                                        Visibility="{Binding ClamInstalled, Converter={StaticResource BoolToVisible}}" />
+                            </StackPanel>
+                        </Grid>
+                        <ProgressBar Margin="42,6,0,0" Style="{StaticResource ProgressBar.Thin}" IsIndeterminate="{Binding ClamBusy}"
+                                     Visibility="{Binding ClamBusy, Converter={StaticResource BoolToVisible}}" />
                     </StackPanel>
+                </Border>
 
-                    <ListBox Grid.Row="1" Style="{StaticResource ListBox.Clean}" ItemsSource="{Binding Detections}"
-                             ItemContainerStyle="{StaticResource ListBoxItem.Row}">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate DataType="{x:Type svc:DefenderDetection}">
-                                <Border Margin="0,0,0,6" Padding="12,10" CornerRadius="12" BorderThickness="1"
-                                        Background="{StaticResource Brush.Inset}" BorderBrush="{StaticResource Brush.Border}">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <Grid Width="36" Height="36" VerticalAlignment="Top">
-                                            <Border CornerRadius="10" Background="{StaticResource Brush.CrimsonSoft}" />
-                                            <TextBlock Style="{StaticResource Text.Icon}" Text="&#xEBE8;" Foreground="{StaticResource Brush.Crimson}" />
-                                        </Grid>
-                                        <StackPanel Grid.Column="1" Margin="12,0">
-                                            <TextBlock Style="{StaticResource Text.Mono}" FontWeight="Bold" Foreground="{StaticResource Brush.Crimson}"
-                                                       Text="{Binding ThreatName}" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Margin="0,2,0,0" FontSize="12.5" FontWeight="SemiBold" Text="{Binding FileName}" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Style="{StaticResource Text.Mono}" FontSize="10.5" Foreground="{StaticResource Brush.TextMuted}"
-                                                       Text="{Binding PrimaryResource}" TextTrimming="CharacterEllipsis" ToolTip="{Binding PrimaryResource}" />
-                                            <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Mono}" FontSize="10.5" Foreground="{StaticResource Brush.TextSecondary}">
-                                                <Run Text="{Binding StatusText, Mode=OneWay}" Foreground="{StaticResource Brush.TextPrimary}" />
-                                                <Run Text=" · " Foreground="{StaticResource Brush.TextMuted}" /><Run Text="{Binding SeverityText, Mode=OneWay}" />
-                                                <Run Text=" · " Foreground="{StaticResource Brush.TextMuted}" /><Run Text="{Binding DateText, Mode=OneWay}" />
-                                            </TextBlock>
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                                            <Button Style="{StaticResource Button.Chip}" Content="Restore"
-                                                    Command="{Binding DataContext.RestoreItemCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                                    CommandParameter="{Binding}"
-                                                    Visibility="{Binding IsQuarantined, Converter={StaticResource BoolToVisible}}" />
-                                        </StackPanel>
-                                    </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                </Grid>
-            </Border>
+                <!-- Threats: Defender history + ZeroLeakage quarantine (ClamAV) -->
+                <Border Grid.Row="2" Style="{StaticResource Card}" Padding="16,14,8,10">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <Grid Margin="2,0,8,10">
+                            <TextBlock VerticalAlignment="Center" Style="{StaticResource Text.Overline}" Foreground="{StaticResource Brush.TextPrimary}" Text="THREATS &amp; QUARANTINE" />
+                            <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                                <Button Style="{StaticResource Button.Chip.Danger}" Content="Remove Defender threats" Margin="0,0,6,0"
+                                        Command="{Binding RemoveThreatsCommand}"
+                                        Visibility="{Binding HasDefenderActiveThreats, Converter={StaticResource BoolToVisible}}" />
+                                <Button Style="{StaticResource Button.Chip}" Content="Refresh" Margin="0,0,6,0" Command="{Binding RefreshCommand}" />
+                                <Button Style="{StaticResource Button.Chip}" Content="Windows Security" Command="{Binding OpenSecurityCommand}" />
+                            </StackPanel>
+                        </Grid>
+
+                        <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center"
+                                    Visibility="{Binding TotalItems, Converter={StaticResource ZeroToVisible}}">
+                            <TextBlock HorizontalAlignment="Center" Style="{StaticResource Text.Icon}" FontSize="34" Text="&#xE73E;" Foreground="{StaticResource Brush.Mint}" />
+                            <TextBlock Margin="0,10,0,0" HorizontalAlignment="Center" Style="{StaticResource Text.Subtitle}" Text="No threats detected" />
+                            <TextBlock HorizontalAlignment="Center" Style="{StaticResource Text.Caption}" Text="Neither engine has anything on this PC." />
+                        </StackPanel>
+
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel>
+                                <!-- ClamAV quarantine (ZeroLeakage vault) -->
+                                <ItemsControl ItemsSource="{Binding Vault}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type svc:VaultItem}">
+                                            <Border Margin="0,0,8,6" Padding="12,10" CornerRadius="12" BorderThickness="1"
+                                                    Background="{StaticResource Brush.Inset}" BorderBrush="{StaticResource Brush.Border}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <Grid Width="34" Height="34" VerticalAlignment="Top">
+                                                        <Border CornerRadius="10" Background="{StaticResource Brush.CrimsonSoft}" />
+                                                        <TextBlock Style="{StaticResource Text.Icon}" Text="&#xEBE8;" Foreground="{StaticResource Brush.Crimson}" />
+                                                    </Grid>
+                                                    <StackPanel Grid.Column="1" Margin="12,0">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Style="{StaticResource Text.Mono}" FontWeight="Bold" Foreground="{StaticResource Brush.Crimson}" Text="{Binding ThreatName}" />
+                                                            <Border Style="{StaticResource Badge}" Margin="8,0,0,0" Background="{StaticResource Brush.VioletSoft}">
+                                                                <TextBlock Style="{StaticResource Badge.Text}" Foreground="{StaticResource Brush.Violet}" Text="CLAMAV" />
+                                                            </Border>
+                                                        </StackPanel>
+                                                        <TextBlock Margin="0,2,0,0" FontSize="12.5" FontWeight="SemiBold" Text="{Binding FileName}" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Style="{StaticResource Text.Mono}" FontSize="10.5" Foreground="{StaticResource Brush.TextMuted}"
+                                                                   Text="{Binding OriginalPath}" TextTrimming="CharacterEllipsis" ToolTip="{Binding OriginalPath}" />
+                                                        <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Mono}" FontSize="10.5" Foreground="{StaticResource Brush.TextSecondary}" ToolTip="{Binding Sha256}">
+                                                            <Run Text="{Binding StatusText, Mode=OneWay}" Foreground="{StaticResource Brush.TextPrimary}" />
+                                                            <Run Text=" · " Foreground="{StaticResource Brush.TextMuted}" /><Run Text="{Binding SizeText, Mode=OneWay}" />
+                                                            <Run Text=" · " Foreground="{StaticResource Brush.TextMuted}" /><Run Text="{Binding DateText, Mode=OneWay}" />
+                                                        </TextBlock>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                                        <Button Style="{StaticResource Button.Chip}" Content="Restore" Margin="0,0,0,6"
+                                                                Command="{Binding DataContext.RestoreVaultCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                CommandParameter="{Binding}" />
+                                                        <Button Style="{StaticResource Button.Chip.Danger}" Content="Delete"
+                                                                Command="{Binding DataContext.DeleteVaultCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                CommandParameter="{Binding}" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <!-- Microsoft Defender threat history -->
+                                <ItemsControl ItemsSource="{Binding Detections}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type svc:DefenderDetection}">
+                                            <Border Margin="0,0,8,6" Padding="12,10" CornerRadius="12" BorderThickness="1"
+                                                    Background="{StaticResource Brush.Inset}" BorderBrush="{StaticResource Brush.Border}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <Grid Width="34" Height="34" VerticalAlignment="Top">
+                                                        <Border CornerRadius="10" Background="{StaticResource Brush.CrimsonSoft}" />
+                                                        <TextBlock Style="{StaticResource Text.Icon}" Text="&#xEBE8;" Foreground="{StaticResource Brush.Crimson}" />
+                                                    </Grid>
+                                                    <StackPanel Grid.Column="1" Margin="12,0">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Style="{StaticResource Text.Mono}" FontWeight="Bold" Foreground="{StaticResource Brush.Crimson}" Text="{Binding ThreatName}" />
+                                                            <Border Style="{StaticResource Badge}" Margin="8,0,0,0" Background="{StaticResource Brush.MintSoft}">
+                                                                <TextBlock Style="{StaticResource Badge.Text}" Foreground="{StaticResource Brush.Mint}" Text="DEFENDER" />
+                                                            </Border>
+                                                        </StackPanel>
+                                                        <TextBlock Margin="0,2,0,0" FontSize="12.5" FontWeight="SemiBold" Text="{Binding FileName}" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Style="{StaticResource Text.Mono}" FontSize="10.5" Foreground="{StaticResource Brush.TextMuted}"
+                                                                   Text="{Binding PrimaryResource}" TextTrimming="CharacterEllipsis" ToolTip="{Binding PrimaryResource}" />
+                                                        <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Mono}" FontSize="10.5" Foreground="{StaticResource Brush.TextSecondary}">
+                                                            <Run Text="{Binding StatusText, Mode=OneWay}" Foreground="{StaticResource Brush.TextPrimary}" />
+                                                            <Run Text=" · " Foreground="{StaticResource Brush.TextMuted}" /><Run Text="{Binding SeverityText, Mode=OneWay}" />
+                                                            <Run Text=" · " Foreground="{StaticResource Brush.TextMuted}" /><Run Text="{Binding DateText, Mode=OneWay}" />
+                                                        </TextBlock>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                                        <Button Style="{StaticResource Button.Chip}" Content="Restore"
+                                                                Command="{Binding DataContext.RestoreItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                                CommandParameter="{Binding}"
+                                                                Visibility="{Binding IsQuarantined, Converter={StaticResource BoolToVisible}}" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+                </Border>
+            </Grid>
         </Grid>
     </Grid>
 </UserControl>

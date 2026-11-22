@@ -41,11 +41,15 @@ object PromptNotifier {
             .setColor(0xFF7B61FF.toInt())
             .setContentTitle("$label wants to connect")
             .setContentText("→ $domain · blocked until you decide")
+            .setStyle(NotificationCompat.BigTextStyle().bigText(
+                "→ $domain\nBlocked until you decide. Allow = it works and never asks again. " +
+                    "Block = cut off for good. Swipe away = stays blocked, asks again in 1 hour."))
+            .setOnlyAlertOnce(true)
             .setSubText("Strict Guard")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
             .setAutoCancel(true)
-            .setTimeoutAfter(30_000)          // default-deny: no answer = stays blocked
+            .setTimeoutAfter(60_000)          // default-deny: no answer = stays blocked (asks again in 10 min)
             .setDeleteIntent(action("dismiss", 3))
             .addAction(0, "Allow", action("allow", 0))
             .addAction(0, "Allow once", action("once", 1))
@@ -75,8 +79,10 @@ class PromptActionReceiver : BroadcastReceiver() {
                 ZeroLeakage.updateRule(pkg) { it.copy(approved = false, wifi = false, mobile = false) }
                 "$label blocked"
             }
-            else -> {   // dismissed or timed out: stays blocked, may ask again later
+            else -> {   // swiped away = "not now": stays blocked, quietly, for an hour
                 ZeroLeakage.pendingPrompts.remove(pkg)
+                ZeroLeakage.snoozePrompts(pkg, 60 * 60_000L)
+                ZeroLeakage.releaseDecision(pkg)
                 null
             }
         }

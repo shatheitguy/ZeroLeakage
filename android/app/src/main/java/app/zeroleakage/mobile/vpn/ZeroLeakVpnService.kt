@@ -62,10 +62,14 @@ class ZeroLeakVpnService : VpnService() {
         private const val VPN_ADDRESS = "10.111.222.1"
         private const val DNS_ADDRESS = "10.111.222.2"
         private const val CHANNEL_SHIELD = "shield"
+        /** Silent, minimised: no sound, no status-bar icon, folded at the bottom of the shade. */
+        const val CHANNEL_QUIET = "shield_quiet"
         const val CHANNEL_PROMPT = "ask_to_connect"
         private const val NOTIF_ID = 1
         /** How long a lookup waits for your Allow / Block tap before it is refused. */
         private const val PROMPT_HOLD_MS = 4_500L
+        /** Don't ask the same app again sooner than this while you haven't decided. */
+        private const val PROMPT_REPEAT_MS = 10 * 60_000L
 
         fun start(context: Context) {
             ContextCompat.startForegroundService(context, Intent(context, ZeroLeakVpnService::class.java).setAction(ACTION_START))
@@ -77,7 +81,15 @@ class ZeroLeakVpnService : VpnService() {
 
         fun ensureChannels(context: Context) {
             val nm = context.getSystemService(NotificationManager::class.java)
-            nm.createNotificationChannel(NotificationChannel(CHANNEL_SHIELD, "Shield status", NotificationManager.IMPORTANCE_LOW))
+            nm.createNotificationChannel(NotificationChannel(CHANNEL_SHIELD, "Shield status (detailed)", NotificationManager.IMPORTANCE_LOW).apply {
+                setShowBadge(false)
+            })
+            nm.createNotificationChannel(NotificationChannel(CHANNEL_QUIET, "Shield status (quiet)", NotificationManager.IMPORTANCE_MIN).apply {
+                description = "Android requires a notification while the shield runs. This one is silent and minimised; you can turn it off here."
+                setShowBadge(false)
+                setSound(null, null)
+                enableVibration(false)
+            })
             nm.createNotificationChannel(NotificationChannel(CHANNEL_PROMPT, "Ask to connect", NotificationManager.IMPORTANCE_HIGH).apply {
                 description = "Strict Guard asks before an unapproved app can use the network"
             })
@@ -150,7 +162,7 @@ class ZeroLeakVpnService : VpnService() {
 
         // Changing resolver or mode invalidates cached answers / temporary allowances.
         scope.launch {
-            combine(ZeroLeakage.resolverId, ZeroLeakage.mode, ZeroLeakage.dnssec, ZeroLeakage.customResolverUrl) { r, m, d, c -> listOf(r, m, d, c) }.drop(1).collect {
+            combine(ZeroLeakage.resolverId, ZeroLeakage.mode, ZeroLeakage.dnssec, ZeroLeakage.customResolverUrl, ZeroLeakage.quietNotification) { r, m, d, c, q -> listOf(r, m, d, c, q) }.drop(1).collect {
                 doh.clear()
                 refreshNotification()
             }
@@ -174,11 +186,18 @@ class ZeroLeakVpnService : VpnService() {
         var decision = decide(q.name, pkg, isCore)
 
         if (decision.prompt && pkg != null) {
-            if (ZeroLeakage.pendingPrompts.add(pkg)) PromptNotifier.show(this, pkg, label, q.name)
-            // Hold the lookup briefly: if you tap Allow in time, the app gets its answer right away
-            // (no error page, no reload). DNS clients wait about 5 s per try, so stay under that.
-            withTimeoutOrNull(PROMPT_HOLD_MS) { ZeroLeakage.decisionWaiter(pkg).await() }
-            decision = decide(q.name, pkg, isCore)
+            val showing = pkg in ZeroLeakage.pendingPrompts
+            if (!showing && ZeroLeakage.canPrompt(pkg)) {
+                ZeroLeakage.pendingPrompts.add(pkg)
+                ZeroLeakage.snoozePrompts(pkg, PROMPT_REPEAT_MS)      // at most one prompt per app per 10 min
+                PromptNotifier.show(this, pkg, label, q.name)
+            }
+            // Hold the lookup briefly while a prompt is up: if you tap Allow in time, the app gets its answer
+            // right away (no error page, no reload). Snoozed apps are refused straight away, silently.
+            if (pkg in ZeroLeakage.pendingPrompts) {
+                withTimeoutOrNull(PROMPT_HOLD_MS) { ZeroLeakage.decisionWaiter(pkg).await() }
+                decision = decide(q.name, pkg, isCore)
+            }
         }
 
         val wantDnssec = ZeroLeakage.dnssec.value
@@ -367,14 +386,21 @@ class ZeroLeakVpnService : VpnService() {
         val mode = ZeroLeakage.mode.value
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val stop = PendingIntent.getService(this, 1, Intent(this, ZeroLeakVpnService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)
-        return NotificationCompat.Builder(this, CHANNEL_SHIELD)
+        val quiet = ZeroLeakage.quietNotification.value
+        return NotificationCompat.Builder(this, if (quiet) CHANNEL_QUIET else CHANNEL_SHIELD)
             .setSmallIcon(R.drawable.ic_stat_shield)
-            .setContentTitle("Zero bits leaked")
+            .setContentTitle(if (quiet) "ZeroLeakage is protecting you" else "Zero bits leaked")
             .setContentText("Mode ${mode.number}: ${mode.title} · encrypted DNS active")
             .setColor(0xFF00F5A0.toInt())
             .setOngoing(true)
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(false)
+            .setPriority(if (quiet) NotificationCompat.PRIORITY_MIN else NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
             .setContentIntent(open)
-            .addAction(0, "Stop shield", stop)
+            .apply { if (!quiet) addAction(0, "Stop shield", stop) }
             .build()
     }
 

@@ -71,7 +71,17 @@ public sealed class MainViewModel : ObservableObject
         RestoreDefaultsCommand = new RelayCommand(() => RequestConfirm(
             "Restore defaults?",
             "Removes every ZeroLeakage_Core firewall rule, custom DNS block and app kill-switch, and returns to Mode 1: Balanced Shield. Snapshots and Microsoft Defender quarantine are kept.",
-            "Restore defaults", true, RestoreDefaultsAsync));
+            "Restore defaults", true, async () =>
+            {
+                // Protection settings are only reset by the person who owns this PC.
+                var owner = System.Windows.Application.Current?.MainWindow is { } w ? new System.Windows.Interop.WindowInteropHelper(w).Handle : IntPtr.Zero;
+                if (!await WindowsAuth.VerifyAsync(owner, "Confirm it's you to restore ZeroLeakage's default protection settings."))
+                {
+                    ShowSnackbar("Restore defaults cancelled: Windows sign-in wasn't confirmed");
+                    return;
+                }
+                await RestoreDefaultsAsync();
+            }));
         ConfirmAcceptCommand = new AsyncRelayCommand(AcceptConfirmAsync);
         ConfirmCancelCommand = new RelayCommand(() => Confirm = null);
         DismissSnackbarCommand = new RelayCommand(() => Snackbar = null);

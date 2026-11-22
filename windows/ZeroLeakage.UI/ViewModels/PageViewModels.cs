@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
@@ -359,29 +360,46 @@ public sealed class DnsTelemetryViewModel : ObservableObject
     }
 }
 
-// ═════════════════════════════ DeepScan AV (Microsoft Defender) ═════════════════════════════
+// ═════════════════════════════ DeepScan AV (Microsoft Defender + optional ClamAV) ═════════════════════════════
 /// <summary>
-/// DeepScan is a front end for the Microsoft Defender engine built into Windows: real scans, real detections,
-/// real quarantine. Removing or restoring a threat asks for administrator rights.
+/// DeepScan drives two engines: Microsoft Defender (always-on shield, built into Windows) and, optionally,
+/// ClamAV as an on-demand second opinion. Every result shown is real. Defender detections are handled by
+/// Defender (admin prompt for remove/restore); ClamAV detections go to ZeroLeakage's own quarantine vault.
 /// </summary>
 public sealed class DeepScanViewModel : ObservableObject
 {
+    public enum ScanEngine { Defender = 0, ClamAV = 1, Both = 2 }
+
     private readonly MainViewModel _shell;
     private CancellationTokenSource? _cts;
     private bool _isScanning, _isLoading;
     private TimeSpan _elapsed;
+    private DateTime _scanStarted;
+    private readonly System.Windows.Threading.DispatcherTimer _clock = new() { Interval = TimeSpan.FromSeconds(1) };
     private bool _isUpdatingDefinitions;
     private string? _definitionsStatus;
     private int _threatsFound;
+    private long _filesScanned;
+    private string _currentFile = "";
     private string _statusText = "Checking Microsoft Defender…";
     private ScanKind _kind;
+    private string? _customPath;
     private DefenderStatus? _status;
+    private ScanEngine _engine = ScanEngine.Defender;
+    private string _scanStage = "";
+
+    // ClamAV
+    private bool _clamBusy;
+    private string? _clamStatus;
+    private string? _clamVersion;
 
     public DeepScanViewModel(MainViewModel shell, IProtectionEngine engine)
     {
         _shell = shell;
-        QuickScanCommand = new AsyncRelayCommand(() => ScanAsync(ScanKind.Quick), () => !IsScanning && DefenderAvailable);
-        FullScanCommand = new AsyncRelayCommand(() => ScanAsync(ScanKind.Full), () => !IsScanning && DefenderAvailable);
+        _clock.Tick += (_, _) => { _elapsed = DateTime.Now - _scanStarted; OnPropertyChanged(nameof(ProgressText)); };
+        QuickScanCommand = new AsyncRelayCommand(() => ScanAsync(ScanKind.Quick, null), CanScan);
+        FullScanCommand = new AsyncRelayCommand(() => ScanAsync(ScanKind.Full, null), CanScan);
+        ScanFolderCommand = new AsyncRelayCommand(PickAndScanFolderAsync, CanScan);
         CancelScanCommand = new RelayCommand(() => _cts?.Cancel(), () => IsScanning);
         RefreshCommand = new AsyncRelayCommand(LoadAsync, () => !_isLoading);
         UpdateDefinitionsCommand = new AsyncRelayCommand(UpdateDefinitionsAsync, () => !IsUpdatingDefinitions && !IsScanning && DefenderAvailable);
@@ -408,12 +426,86 @@ public sealed class DeepScanViewModel : ObservableObject
                     _shell.ShowSnackbar(ok ? $"{d.FileName} restored by Defender" : "Not restored: permission was declined or Defender reported an error");
                 });
         });
+
+        EnableClamCommand = new AsyncRelayCommand(() =>
+        {
+            _shell.RequestConfirm("Add ClamAV as a second engine?",
+                "ZeroLeakage downloads the official ClamAV for Windows from Cisco-Talos on GitHub (about 215 MB) and checks it against its published SHA-256, " +
+                "then downloads ClamAV's virus signatures (about 300 MB, first time only). It's installed just for you, in your ZeroLeakage folder, and kept up to date daily. " +
+                "ClamAV scans only when you ask; Microsoft Defender stays your always-on protection.",
+                "Download & enable", false, InstallClamAsync);
+            return Task.CompletedTask;
+        }, () => !ClamBusy && !IsScanning);
+        UpdateClamCommand = new AsyncRelayCommand(UpdateClamAsync, () => ClamInstalled && !ClamBusy && !IsScanning);
+        RemoveClamCommand = new RelayCommand(() =>
+            _shell.RequestConfirm("Remove ClamAV?",
+                "Deletes ClamAV and its signatures (frees about 400 MB). Files in the ZeroLeakage quarantine stay where they are.",
+                "Remove ClamAV", true, () =>
+                {
+                    try { ClamAvService.Uninstall(); _shell.ShowSnackbar("ClamAV removed"); }
+                    catch (Exception ex) { _shell.ShowSnackbar("Couldn't remove ClamAV: " + ex.Message); }
+                    if (Engine != ScanEngine.Defender) Engine = ScanEngine.Defender;
+                    RaiseClam();
+                    return Task.CompletedTask;
+                }), () => ClamInstalled && !ClamBusy && !IsScanning);
+        RestoreVaultCommand = new RelayCommand(p =>
+        {
+            if (p is not VaultItem v) return;
+            _shell.RequestConfirm("Restore this file?",
+                $"ClamAV flagged {v.FileName} as {v.ThreatName}. Restoring puts it back at {v.OriginalPath} and it will be able to run.",
+                "Restore file", true, async () =>
+                {
+                    try
+                    {
+                        var where = await QuarantineVault.RestoreAsync(v);
+                        _shell.ShowSnackbar($"Restored to {where}");
+                    }
+                    catch (Exception ex) { _shell.ShowSnackbar("Couldn't restore: " + ex.Message); }
+                    LoadVault();
+                });
+        });
+        DeleteVaultCommand = new RelayCommand(p =>
+        {
+            if (p is not VaultItem v) return;
+            _shell.RequestConfirm("Delete permanently?",
+                $"{v.FileName} ({v.ThreatName}) will be deleted from the ZeroLeakage quarantine. This can't be undone.",
+                "Delete forever", true, () =>
+                {
+                    QuarantineVault.Delete(v);
+                    LoadVault();
+                    _shell.ShowSnackbar($"{v.FileName} deleted");
+                    return Task.CompletedTask;
+                });
+        });
+
+        LoadVault();
         _ = LoadAsync();
+        _ = RefreshClamVersionAsync();
+        if (ClamReady) _engine = ScanEngine.Both;   // once installed, every scan gets the second opinion
+        _ = AutoUpdateClamAsync();
+    }
+
+    /// <summary>Keeps ClamAV's engine and signatures fresh without asking (at most once a day).</summary>
+    private async Task AutoUpdateClamAsync()
+    {
+        if (!ClamAvService.IsInstalled || ClamAvService.DatabaseUpdated is { } t && DateTime.Now - t < TimeSpan.FromHours(20)) return;
+        await Task.Delay(TimeSpan.FromSeconds(40));   // let the app settle after start-up
+        if (ClamBusy || IsScanning) return;
+        ClamBusy = true;
+        try { ClamStatus = "Daily update: " + await ClamAvService.UpdateAllAsync(new Progress<string>(_ => { }), CancellationToken.None); }
+        catch (Exception ex) { ClamStatus = "Daily update failed: " + ex.Message; }
+        finally
+        {
+            ClamBusy = false;
+            await RefreshClamVersionAsync();
+        }
     }
 
     public ObservableCollection<DefenderDetection> Detections { get; } = new();
+    public ObservableCollection<VaultItem> Vault { get; } = new();
     public ICommand QuickScanCommand { get; }
     public ICommand FullScanCommand { get; }
+    public ICommand ScanFolderCommand { get; }
     public ICommand CancelScanCommand { get; }
     public ICommand RefreshCommand { get; }
     public ICommand UpdateDefinitionsCommand { get; }
@@ -421,18 +513,55 @@ public sealed class DeepScanViewModel : ObservableObject
     public ICommand RestoreItemCommand { get; }
     public ICommand OpenSecurityCommand { get; }
     public ICommand OpenRealtimeSettingsCommand { get; }
+    public ICommand EnableClamCommand { get; }
+    public ICommand UpdateClamCommand { get; }
+    public ICommand RemoveClamCommand { get; }
+    public ICommand RestoreVaultCommand { get; }
+    public ICommand DeleteVaultCommand { get; }
 
+    // ───────────────────────── engine choice ─────────────────────────
+    public ScanEngine Engine
+    {
+        get => _engine;
+        set
+        {
+            if (value != ScanEngine.Defender && !ClamReady)
+            {
+                _shell.ShowSnackbar("Enable ClamAV first (below), then you can scan with it");
+                OnPropertyChanged(nameof(Engine));
+                return;
+            }
+            if (SetProperty(ref _engine, value)) CommandManager.InvalidateRequerySuggested();
+        }
+    }
+    private bool UsesDefender => _engine != ScanEngine.ClamAV;
+    private bool UsesClam => _engine != ScanEngine.Defender;
+    private bool CanScan() => !IsScanning && !ClamBusy && (!UsesDefender || DefenderAvailable) && (!UsesClam || ClamReady);
+
+    // ───────────────────────── scan state ─────────────────────────
     public bool IsScanning
     {
         get => _isScanning;
-        private set { if (SetProperty(ref _isScanning, value)) { OnPropertyChanged(nameof(ProgressText)); CommandManager.InvalidateRequerySuggested(); } }
+        private set
+        {
+            if (!SetProperty(ref _isScanning, value)) return;
+            OnPropertyChanged(nameof(ProgressText));
+            OnPropertyChanged(nameof(ScanKindText));
+            CommandManager.InvalidateRequerySuggested();
+        }
     }
-    /// <summary>Elapsed time while scanning (Defender does not publish a percentage); a check mark when idle.</summary>
+    /// <summary>Elapsed time while scanning; a check mark (or "!") when idle.</summary>
     public string ProgressText => IsScanning ? _elapsed.ToString(_elapsed.TotalHours >= 1 ? @"h\:mm\:ss" : @"mm\:ss") : (ActiveThreats > 0 ? "!" : "✓");
     public int ThreatsFound { get => _threatsFound; private set => SetProperty(ref _threatsFound, value); }
+    public long FilesScanned { get => _filesScanned; private set { if (SetProperty(ref _filesScanned, value)) OnPropertyChanged(nameof(FilesScannedText)); } }
+    public string FilesScannedText => _filesScanned > 0 ? $"{_filesScanned:N0} files checked by ClamAV" : "";
+    public string CurrentFile { get => _currentFile; private set => SetProperty(ref _currentFile, value); }
     public string StatusText { get => _statusText; private set => SetProperty(ref _statusText, value); }
-    public string ScanKindText => IsScanning ? (_kind == ScanKind.Quick ? "QUICK SCAN" : "FULL SCAN") : (ActiveThreats > 0 ? "ACTION NEEDED" : "PROTECTED");
+    public string ScanKindText => IsScanning
+        ? (_scanStage.Length > 0 ? _scanStage : _kind == ScanKind.Quick ? "QUICK SCAN" : _kind == ScanKind.Full ? "FULL SCAN" : "FOLDER SCAN")
+        : (ActiveThreats > 0 ? "ACTION NEEDED" : "PROTECTED");
 
+    // ───────────────────────── Defender status ─────────────────────────
     public bool DefenderAvailable => _status?.Available == true;
     public bool RealtimeOn => _status?.RealTimeProtection == true;
     public string RealtimeText => _status is null ? "…" : !_status.Available ? "UNAVAILABLE" : _status.RealTimeProtection ? "ON" : "OFF";
@@ -446,8 +575,16 @@ public sealed class DeepScanViewModel : ObservableObject
         get => _isUpdatingDefinitions;
         private set { if (SetProperty(ref _isUpdatingDefinitions, value)) CommandManager.InvalidateRequerySuggested(); }
     }
-    /// <summary>Result line of the last definitions update (null until the user runs one).</summary>
     public string? DefinitionsStatus { get => _definitionsStatus; private set => SetProperty(ref _definitionsStatus, value); }
+
+    // ───────────────────────── ClamAV status ─────────────────────────
+    public bool ClamInstalled => ClamAvService.IsInstalled;
+    public bool ClamReady => ClamAvService.IsInstalled && ClamAvService.HasDatabase;
+    public bool ClamNotInstalled => !ClamInstalled;
+    public bool ClamBusy { get => _clamBusy; private set { if (SetProperty(ref _clamBusy, value)) CommandManager.InvalidateRequerySuggested(); } }
+    public string? ClamStatus { get => _clamStatus; private set => SetProperty(ref _clamStatus, value); }
+    public string ClamVersionText => _clamVersion ?? (ClamInstalled ? (ClamAvService.HasDatabase ? "ClamAV" : "ClamAV · no signatures yet") : "Not installed");
+    public string ClamDbAgeText => ClamAvService.DatabaseUpdated is { } t ? $"Signatures updated {Ago(t)}" : "No signatures yet";
 
     private static string Ago(DateTime local)
     {
@@ -459,11 +596,44 @@ public sealed class DeepScanViewModel : ObservableObject
     }
 
     public string LastScanText => _status?.LastScan is { } t ? t.ToLocalTime().ToString("dd MMM yyyy · HH:mm") : "Never";
-    public int ActiveThreats => Detections.Count(d => d.NeedsAction);
+    public int ActiveThreats => Detections.Count(d => d.NeedsAction) + Vault.Count(v => !v.Quarantined);
     public bool HasActiveThreats => ActiveThreats > 0;
+    public bool HasDefenderActiveThreats => Detections.Any(d => d.NeedsAction);
+    public int TotalItems => Detections.Count + Vault.Count;
 
     /// <summary>Called when the page is opened.</summary>
-    public void Refresh() => _ = LoadAsync();
+    public void Refresh()
+    {
+        LoadVault();
+        _ = LoadAsync();
+    }
+
+    private void RaiseClam()
+    {
+        foreach (var n in new[] { nameof(ClamInstalled), nameof(ClamReady), nameof(ClamNotInstalled), nameof(ClamVersionText), nameof(ClamDbAgeText) })
+            OnPropertyChanged(n);
+        CommandManager.InvalidateRequerySuggested();
+    }
+
+    private async Task RefreshClamVersionAsync()
+    {
+        try { _clamVersion = ClamAvService.IsInstalled ? await ClamAvService.VersionAsync() : null; }
+        catch { _clamVersion = null; }
+        RaiseClam();
+    }
+
+    private void LoadVault()
+    {
+        Vault.Clear();
+        foreach (var v in QuarantineVault.Items()) Vault.Add(v);
+        RaiseCounts();
+    }
+
+    private void RaiseCounts()
+    {
+        foreach (var n in new[] { nameof(ActiveThreats), nameof(HasActiveThreats), nameof(HasDefenderActiveThreats), nameof(TotalItems), nameof(ProgressText), nameof(ScanKindText) })
+            OnPropertyChanged(n);
+    }
 
     private async Task LoadAsync()
     {
@@ -484,9 +654,9 @@ public sealed class DeepScanViewModel : ObservableObject
                     : "No active threats · protected by Microsoft Defender";
             }
             foreach (var n in new[] { nameof(DefenderAvailable), nameof(RealtimeOn), nameof(RealtimeText), nameof(SignatureText),
-                                      nameof(SignatureVersionText), nameof(SignatureAgeText), nameof(SignaturesStale),
-                                      nameof(LastScanText), nameof(ActiveThreats), nameof(HasActiveThreats), nameof(ProgressText), nameof(ScanKindText) })
+                                      nameof(SignatureVersionText), nameof(SignatureAgeText), nameof(SignaturesStale), nameof(LastScanText) })
                 OnPropertyChanged(n);
+            RaiseCounts();
             CommandManager.InvalidateRequerySuggested();
         }
         finally { _isLoading = false; }
@@ -510,49 +680,136 @@ public sealed class DeepScanViewModel : ObservableObject
         }
     }
 
-    private async Task ScanAsync(ScanKind kind)
+    // ───────────────────────── ClamAV install / update ─────────────────────────
+    private async Task InstallClamAsync()
     {
-        _kind = kind;
-        _cts = new CancellationTokenSource();
-        _elapsed = TimeSpan.Zero;
-        ThreatsFound = 0;
-        IsScanning = true;
-        OnPropertyChanged(nameof(ScanKindText));
-        StatusText = kind == ScanKind.Quick
-            ? "Microsoft Defender quick scan: memory, startup items and common malware locations…"
-            : "Microsoft Defender full scan: every file on every fixed drive. This can take an hour or more…";
-        string? finalStatus = null;
+        ClamBusy = true;
         try
         {
-            var outcome = await DefenderService.ScanAsync(kind == ScanKind.Full, new Progress<TimeSpan>(t =>
-            {
-                _elapsed = t;
-                OnPropertyChanged(nameof(ProgressText));
-            }), _cts.Token);
-            ThreatsFound = outcome.NewDetections.Count;
-            finalStatus = !outcome.Completed ? outcome.Message
-                : outcome.NewDetections.Count == 0 ? $"Clean · Defender found no threats ({outcome.Duration:mm\\:ss})"
-                : $"Defender found {outcome.NewDetections.Count} threat(s): see the list";
-            _shell.ShowSnackbar(finalStatus);
-        }
-        catch (OperationCanceledException)
-        {
-            finalStatus = "Scan cancelled";
+            var msg = await ClamAvService.InstallAsync(new Progress<string>(s => ClamStatus = s), CancellationToken.None);
+            ClamStatus = msg;
+            _shell.ShowSnackbar("ClamAV is ready as a second engine");
+            Engine = ScanEngine.Both;
         }
         catch (Exception ex)
         {
-            finalStatus = $"Scan failed: {ex.Message}";
+            ClamStatus = "ClamAV setup failed: " + ex.Message;
+            _shell.ShowSnackbar(ClamStatus);
+        }
+        finally
+        {
+            ClamBusy = false;
+            await RefreshClamVersionAsync();
+        }
+    }
+
+    private async Task UpdateClamAsync()
+    {
+        ClamBusy = true;
+        try
+        {
+            ClamStatus = await ClamAvService.UpdateAllAsync(new Progress<string>(s => ClamStatus = s), CancellationToken.None);
+            _shell.ShowSnackbar("ClamAV: " + ClamStatus);
+        }
+        catch (Exception ex) { ClamStatus = "Update failed: " + ex.Message; }
+        finally
+        {
+            ClamBusy = false;
+            await RefreshClamVersionAsync();
+        }
+    }
+
+    // ───────────────────────── scanning ─────────────────────────
+    private async Task PickAndScanFolderAsync()
+    {
+        var dlg = new Microsoft.Win32.OpenFolderDialog { Title = "Choose a folder or drive to scan", Multiselect = false };
+        if (dlg.ShowDialog() != true) return;
+        await ScanAsync(ScanKind.Quick, dlg.FolderName);
+    }
+
+    /// <summary>Runs the chosen engine(s). <paramref name="path"/> set = folder scan.</summary>
+    public async Task ScanAsync(ScanKind kind, string? path)
+    {
+        _kind = kind;
+        _customPath = path;
+        _cts = new CancellationTokenSource();
+        _elapsed = TimeSpan.Zero;
+        _scanStarted = DateTime.Now;
+        ThreatsFound = 0;
+        FilesScanned = 0;
+        CurrentFile = "";
+        IsScanning = true;
+        _clock.Start();
+        var results = new List<string>();
+        int found = 0;
+        try
+        {
+            if (UsesDefender)
+            {
+                SetStage("DEFENDER");
+                StatusText = path is not null ? $"Microsoft Defender is scanning {path}…"
+                    : kind == ScanKind.Quick ? "Microsoft Defender quick scan: memory, startup items and common malware locations…"
+                    : "Microsoft Defender full scan: every file on every fixed drive. This can take an hour or more…";
+                var outcome = await DefenderService.ScanAsync(kind == ScanKind.Full, new Progress<TimeSpan>(_ => { }), _cts.Token, path);
+                found += outcome.NewDetections.Count;
+                ThreatsFound = found;
+                results.Add(!outcome.Completed ? "Defender: " + outcome.Message
+                    : outcome.NewDetections.Count == 0 ? "Defender: clean" : $"Defender: {outcome.NewDetections.Count} found");
+            }
+            if (UsesClam)
+            {
+                SetStage("CLAMAV");
+                var paths = path is not null ? new[] { path } : kind == ScanKind.Quick ? ClamAvService.QuickScanPaths() : ClamAvService.FullScanPaths();
+                StatusText = path is not null ? $"ClamAV is scanning {path}…"
+                    : kind == ScanKind.Quick ? "ClamAV quick scan: Downloads, Desktop, temp and startup folders…"
+                    : "ClamAV full scan: every fixed drive. This takes a long time…";
+                var (hits, files, error) = await ClamAvService.ScanAsync(paths, new Progress<ClamProgress>(p =>
+                {
+                    FilesScanned = p.FilesScanned;
+                    CurrentFile = p.CurrentPath;
+                }), _cts.Token);
+                foreach (var h in hits)
+                {
+                    var item = await QuarantineVault.QuarantineAsync(h.Path, h.Signature);
+                    if (!item.Quarantined) _shell.ShowSnackbar($"ClamAV found {h.Signature} in {item.FileName} but couldn't move it ({item.Error})");
+                }
+                found += hits.Count;
+                ThreatsFound = found;
+                results.Add(error is not null ? "ClamAV: " + error
+                    : hits.Count == 0 ? $"ClamAV: clean ({files:N0} files)" : $"ClamAV: {hits.Count} quarantined");
+            }
+            var summary = string.Join(" · ", results);
+            StatusText = found == 0 ? $"Clean · {summary} ({_elapsed:mm\\:ss})" : $"{found} threat(s) found · {summary}";
+            _shell.ShowSnackbar(StatusText);
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText = "Scan cancelled" + (results.Count > 0 ? " · " + string.Join(" · ", results) : "");
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Scan failed: {ex.Message}";
             throw;   // still reported (snackbar + error log)
         }
         finally
         {
-            _cts.Dispose();
+            _clock.Stop();
+            _cts?.Dispose();
             _cts = null;
+            var final = StatusText;
+            LoadVault();
             await LoadAsync();
-            if (finalStatus is not null) StatusText = finalStatus;
+            StatusText = final;
+            CurrentFile = "";
+            SetStage("");
             IsScanning = false;
-            OnPropertyChanged(nameof(ScanKindText));
         }
+    }
+
+    private void SetStage(string stage)
+    {
+        _scanStage = stage;
+        OnPropertyChanged(nameof(ScanKindText));
     }
 }
 

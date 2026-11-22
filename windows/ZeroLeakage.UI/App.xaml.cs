@@ -134,6 +134,61 @@ public partial class App : Application
             $"[{DateTime.Now:O}] deepscan available={shell.DeepScan.DefenderAvailable} realtime={shell.DeepScan.RealtimeText} " +
             $"sigs='{shell.DeepScan.SignatureText}' lastScan='{shell.DeepScan.LastScanText}' detections={shell.DeepScan.Detections.Count} " +
             $"status='{shell.DeepScan.StatusText}'{Environment.NewLine}");
+        if (Environment.GetEnvironmentVariable("ZL_SELFTEST_CLAM") == "1")
+        {
+            // Opt-in: real ClamAV install/update, a pipeline test with a harmless custom signature, and a real scan.
+            string L(string s) => $"[{DateTime.Now:O}] clam {s}{Environment.NewLine}";
+            var logPath = Path.Combine(UiSettingsStore.Directory, "ui-selftest.log");
+            try
+            {
+                var stage = new Progress<string>(s => File.AppendAllText(logPath, L("stage: " + s)));
+                var msg = ClamAvService.IsInstalled
+                    ? await ClamAvService.UpdateAllAsync(stage, System.Threading.CancellationToken.None)
+                    : await ClamAvService.InstallAsync(stage, System.Threading.CancellationToken.None);
+                File.AppendAllText(logPath, L($"setup='{msg}' version='{await ClamAvService.VersionAsync()}' tag='{ClamAvService.InstalledTag}'"));
+
+                // Pipeline test: our own signature for a harmless file (no real malware, no Defender alert).
+                var testDir = Path.Combine(Path.GetTempPath(), "zl-clam-selftest");
+                var sigDir = Path.Combine(testDir, "sigs");
+                Directory.CreateDirectory(sigDir);
+                var sample = Path.Combine(testDir, "sample", "zl-clam-test.bin");
+                Directory.CreateDirectory(Path.GetDirectoryName(sample)!);
+                var bytes = System.Text.Encoding.ASCII.GetBytes("ZeroLeakage ClamAV pipeline self-test - harmless file");
+                File.WriteAllBytes(sample, bytes);
+                File.WriteAllText(Path.Combine(testDir, "sample", "clean.txt"), "just text");
+                var md5 = Convert.ToHexString(System.Security.Cryptography.MD5.HashData(bytes)).ToLowerInvariant();
+                File.WriteAllText(Path.Combine(sigDir, "zltest.hdb"), $"{md5}:{bytes.Length}:ZeroLeakage.SelfTest.Harmless\n");
+                var (hits, files, err) = await ClamAvService.ScanAsync(new[] { Path.GetDirectoryName(sample)! }, new Progress<ClamProgress>(_ => { }),
+                    System.Threading.CancellationToken.None, sigDir);
+                File.AppendAllText(logPath, L($"pipeline files={files} hits={string.Join(",", hits.Select(h => h.Signature))} err='{err}'"));
+                if (hits.Count != 1) _errorCount++;
+                foreach (var h in hits)
+                {
+                    var item = await QuarantineVault.QuarantineAsync(h.Path, h.Signature);
+                    bool goneAfterQuarantine = !File.Exists(h.Path);
+                    var restored = await QuarantineVault.RestoreAsync(item);
+                    bool sameBytes = File.Exists(restored) && File.ReadAllBytes(restored).SequenceEqual(bytes);
+                    File.AppendAllText(logPath, L($"vault quarantined={item.Quarantined} removed={goneAfterQuarantine} restoredSame={sameBytes}"));
+                    if (!item.Quarantined || !goneAfterQuarantine || !sameBytes) _errorCount++;
+                }
+
+                // Real scan with the full ClamAV database (clean folder: expect 0 hits).
+                if (ClamAvService.HasDatabase)
+                {
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    var (realHits, realFiles, realErr) = await ClamAvService.ScanAsync(new[] { Path.Combine(testDir, "sample") },
+                        new Progress<ClamProgress>(_ => { }), System.Threading.CancellationToken.None);
+                    File.AppendAllText(logPath, L($"real-db files={realFiles} hits={realHits.Count} err='{realErr}' took={sw.Elapsed.TotalSeconds:0}s"));
+                    if (realErr is not null) _errorCount++;
+                }
+                try { Directory.Delete(testDir, true); } catch { }
+            }
+            catch (Exception ex)
+            {
+                File.AppendAllText(logPath, L("FAILED " + ex));
+                _errorCount++;
+            }
+        }
         if (Environment.GetEnvironmentVariable("ZL_SELFTEST_SCAN") == "1")
         {
             // Opt-in: a real Microsoft Defender quick scan through the DeepScan page (takes a few minutes).

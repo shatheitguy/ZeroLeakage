@@ -24,3 +24,8 @@ keystore.properties
 # ── OS / editor ──
 .DS_Store
 Thumbs.db
+
+# ── Server (Go) ──
+server/data/
+server/zeroleakage-server
+server/*.exe

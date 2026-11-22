@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import app.zeroleakage.mobile.vpn.ZeroLeakVpnService
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -51,6 +52,26 @@ fun SettingsScreen(shield: ShieldController) {
                 }
                 SettingRow("Shield running", if (running) "Encrypted DNS + firewall active" else "Tap to engage") {
                     ZlSwitch(running, { if (it) shield.start() else shield.stop() })
+                }
+                val quiet by ZeroLeakage.quietNotification.collectAsStateWithLifecycle()
+                SettingRow("Quiet notification", if (quiet) "Silent and minimised: no sound, no status-bar icon" else "Detailed, with a Stop button") {
+                    ZlSwitch(quiet, ZeroLeakage::setQuietNotification)
+                }
+                val ctx = androidx.compose.ui.platform.LocalContext.current
+                Text(
+                    "Android requires a notification while any VPN runs. To hide it completely, turn off its category; the shield keeps running.",
+                    fontSize = 11.5.sp, color = Zl.TextMuted, lineHeight = 15.sp,
+                )
+                Spacer(Modifier.height(8.dp))
+                SmallAction("Hide notification completely", Zl.Violet) {
+                    ZeroLeakVpnService.ensureChannels(ctx)
+                    val intent = android.content.Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                        .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, ctx.packageName)
+                        .putExtra(android.provider.Settings.EXTRA_CHANNEL_ID, ZeroLeakVpnService.CHANNEL_QUIET)
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    if (!quiet) ZeroLeakage.setQuietNotification(true)
+                    runCatching { ctx.startActivity(intent) }
+                    ZeroLeakage.say("Turn off \"Shield status (quiet)\" to hide it")
                 }
             }
         }

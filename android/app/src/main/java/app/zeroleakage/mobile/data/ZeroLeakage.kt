@@ -73,6 +73,15 @@ object ZeroLeakage {
     private val _dnssecStrict = MutableStateFlow(false)
     val dnssecStrict: StateFlow<Boolean> = _dnssecStrict.asStateFlow()
 
+    /** The shield's required notification: quiet (silent, minimised, no icon) by default. */
+    private val _quietNotification = MutableStateFlow(true)
+    val quietNotification: StateFlow<Boolean> = _quietNotification.asStateFlow()
+
+    fun setQuietNotification(on: Boolean) {
+        _quietNotification.value = on
+        prefs.edit().putBoolean("quiet_notif", on).apply()
+    }
+
     private val _startOnBoot = MutableStateFlow(false)
     val startOnBoot: StateFlow<Boolean> = _startOnBoot.asStateFlow()
 
@@ -129,6 +138,18 @@ object ZeroLeakage {
 
     /** Apps the user tapped "Allow once" for — cleared whenever the shield restarts. */
     val allowedOnce: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    /**
+     * "Ask to connect" pacing: a package is not asked again before this time (epoch ms).
+     * Shown prompt = 10 min; swiped away ("not now") = 1 h. Allow / Block clears it (no more prompts anyway).
+     */
+    val promptQuietUntil: ConcurrentHashMap<String, Long> = ConcurrentHashMap()
+
+    fun canPrompt(pkg: String): Boolean = System.currentTimeMillis() >= (promptQuietUntil[pkg] ?: 0L)
+
+    fun snoozePrompts(pkg: String, millis: Long) {
+        promptQuietUntil[pkg] = System.currentTimeMillis() + millis
+    }
+
     /** Packages with an "Ask to connect" notification already showing. */
     val pendingPrompts: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
@@ -143,6 +164,7 @@ object ZeroLeakage {
         _method.value = runCatching { Method.valueOf(prefs.getString("method", null) ?: "") }.getOrDefault(Method.FULL)
         _liteProvider.value = prefs.getString("lite_provider", null) ?: PrivateDns.PROVIDERS.first().id
         _startOnBoot.value = prefs.getBoolean("boot", false)
+        _quietNotification.value = prefs.getBoolean("quiet_notif", true)
         _onboarded.value = prefs.getBoolean("onboarded", false)
         _rules.value = decodeRules(prefs.getString("rules", null))
         _stats.value = Stats(
@@ -255,6 +277,7 @@ object ZeroLeakage {
         _rules.update { it + (pkg to transform(it[pkg] ?: AppRule(pkg))) }
         prefs.edit().putString("rules", encodeRules(_rules.value)).apply()
         pendingPrompts.remove(pkg)
+        promptQuietUntil.remove(pkg)
         releaseDecision(pkg)          // any lookup held for an "Ask to connect" decision re-checks now
     }
 

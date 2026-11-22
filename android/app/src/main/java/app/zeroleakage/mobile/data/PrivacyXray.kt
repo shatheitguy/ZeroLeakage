@@ -1,5 +1,6 @@
 package app.zeroleakage.mobile.data
 
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.AppOpsManager
 import android.app.admin.DevicePolicyManager
 import android.content.Context
@@ -8,6 +9,7 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
+import android.view.accessibility.AccessibilityManager
 import android.view.inputmethod.InputMethodManager
 
 /**
@@ -125,17 +127,30 @@ object PrivacyXray {
         val cr = context.contentResolver
         val self = context.packageName
 
-        val accessibility = parseComponentPackages(Settings.Secure.getString(cr, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES))
-        val listeners = parseComponentPackages(Settings.Secure.getString(cr, "enabled_notification_listeners"))
+        // Newer Android versions refuse direct reads of several Secure settings to apps targeting a recent SDK
+        // (e.g. ENABLED_INPUT_METHODS on Android 14+). Use the public APIs, and treat every settings read as
+        // optional so one refusal never breaks the whole scan.
+        fun secure(key: String): String? = runCatching { Settings.Secure.getString(cr, key) }.getOrNull()
 
-        val defaultImePkg = Settings.Secure.getString(cr, Settings.Secure.DEFAULT_INPUT_METHOD)
-            ?.substringBefore('/')?.trim()?.takeIf { it.isNotEmpty() }
+        // Accessibility: the public AccessibilityManager list of *enabled* services.
+        val accessibility: Set<String> = runCatching {
+            context.getSystemService(AccessibilityManager::class.java)
+                ?.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+                ?.mapNotNull { it.resolveInfo?.serviceInfo?.packageName }?.toSet()
+        }.getOrNull() ?: parseComponentPackages(secure(Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES))
+
+        // Notification access has no public "who is enabled" API; read the setting where Android still allows it.
+        val listeners = parseComponentPackages(secure("enabled_notification_listeners"))
+
+        // Keyboards: InputMethodManager is the public API for enabled keyboards and the current one.
+        val imm = runCatching { context.getSystemService(InputMethodManager::class.java) }.getOrNull()
+        val defaultImePkg: String? = (
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) runCatching { imm?.currentInputMethodInfo?.packageName }.getOrNull()
+            else null
+        ) ?: secure(Settings.Secure.DEFAULT_INPUT_METHOD)?.substringBefore('/')?.trim()?.takeIf { it.isNotEmpty() }
         val keyboards = buildSet {
-            addAll(parseComponentPackages(Settings.Secure.getString(cr, Settings.Secure.ENABLED_INPUT_METHODS)))
-            runCatching {
-                val imm = context.getSystemService(InputMethodManager::class.java)
-                imm?.enabledInputMethodList?.forEach { add(it.packageName) }
-            }
+            runCatching { imm?.enabledInputMethodList?.forEach { add(it.packageName) } }
+            if (isEmpty()) addAll(parseComponentPackages(secure(Settings.Secure.ENABLED_INPUT_METHODS)))
             defaultImePkg?.let { add(it) }
         }
 

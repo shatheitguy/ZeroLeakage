@@ -23,8 +23,8 @@ unknown apps off the network, and encrypts every DNS lookup that is allowed thro
 
 | Platform | File | Notes |
 |---|---|---|
-| Windows 10 / 11 (x64) | [`ZeroLeakage-1.2.0-x64.msi`](https://github.com/shatheitguy/ZeroLeakage/releases/download/v1.2.0/ZeroLeakage-1.2.0-x64.msi) | Self-contained: .NET is bundled, nothing else to install. |
-| Android 10+ | [`ZeroLeakage-1.2.0-release.apk`](https://github.com/shatheitguy/ZeroLeakage/releases/download/v1.2.0/ZeroLeakage-1.2.0-release.apk) | Sideload: allow "Install unknown apps" for your browser or file manager. |
+| Windows 10 / 11 (x64) | [`ZeroLeakage-1.3.0-x64.msi`](https://github.com/shatheitguy/ZeroLeakage/releases/download/v1.3.0/ZeroLeakage-1.3.0-x64.msi) | Self-contained: .NET is bundled, nothing else to install. |
+| Android 10+ | [`ZeroLeakage-1.3.0-release.apk`](https://github.com/shatheitguy/ZeroLeakage/releases/download/v1.3.0/ZeroLeakage-1.3.0-release.apk) | Sideload: allow "Install unknown apps" for your browser or file manager. |
 
 ## Three protection modes
 
@@ -42,7 +42,8 @@ A dark-glass WPF desktop app with a frameless window, an animated mode switcher 
 - **Firewall rules:** per-app Wi-Fi / Ethernet / VPN access and global kill switches.
 - **DNS & filters:** AdGuard-style filter lists (real downloads and rule counts), 10 DoH resolvers plus a custom endpoint, DNSSEC validation with a live domain checker, offline GeoIP, allow/block lists, OS telemetry services and trace-log wiping.
 - **Packet inspector:** *Inspect* on any feed row shows the matching filter rule plus a real DNS-over-HTTPS lookup of that domain: answers, TTLs, flags, DNSSEC result, Extended DNS Errors, the country of each IP and raw hex.
-- **DeepScan AV:** powered by Microsoft Defender (built into Windows): quick / full scans, real threat history, remove and restore from quarantine.
+- **DeepScan AV:** two engines. **Microsoft Defender** (built into Windows) is the always-on shield; **ClamAV** (open source, Cisco Talos) is an optional on-demand second opinion, downloaded once, verified against its published SHA-256 and kept up to date daily. Quick, full or folder scans with either or both, a radar scan view, real threat history, and a ZeroLeakage quarantine for ClamAV finds.
+- **Protected reset:** Restore Defaults asks for your Windows Hello PIN, fingerprint or password first.
 - **Snapshots & settings:** restore points, start with Windows (on by default, hidden in the tray), tray behaviour.
 - **Profile menu:** replaces the old CORE indicator: Settings, About (version and system details), *Check for updates* with one-click install, *Update antivirus definitions*, and an optional *Account & sync* slot (coming soon).
 - **Ask to Connect:** a toast slides in when an unknown app tries to get online in Strict Guard.
@@ -85,6 +86,10 @@ A real on-device DNS firewall built on Android's `VpnService`. Nothing is routed
            NXDOMAIN            DNS-over-HTTPS (TLS) → resolver
 ```
 
+## ZeroLeakage Server
+
+Self-hosted DNS filtering for your whole network (AdGuard Home / Pi-hole style), with DoH/DoT for phones on mobile data, per-device rules and optional sign-in that syncs rules between your devices. See [server/README.md](server/README.md).
+
 ## Build from source
 
 The two apps are fully independent: separate folders, toolchains and outputs, and no shared code.
@@ -98,7 +103,7 @@ docs/      project website (GitHub Pages)
 **Windows** (needs the .NET 10 SDK):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File windows\build-msi.ps1     # -> windows\artifacts\msi\ZeroLeakage-1.2.0-x64.msi
+powershell -ExecutionPolicy Bypass -File windows\build-msi.ps1     # -> windows\artifacts\msi\ZeroLeakage-1.3.0-x64.msi
 dotnet run --project windows\ZeroLeakage.UI                          # run the UI
 ```
 
@@ -106,7 +111,7 @@ dotnet run --project windows\ZeroLeakage.UI                          # run the U
 
 ```powershell
 cd android
-.\gradlew.bat assembleRelease      # -> app\build\outputs\apk\release\ZeroLeakage-1.2.0-release.apk
+.\gradlew.bat assembleRelease      # -> app\build\outputs\apk\release\ZeroLeakage-1.3.0-release.apk
 .\gradlew.bat testDebugUnitTest
 ```
 

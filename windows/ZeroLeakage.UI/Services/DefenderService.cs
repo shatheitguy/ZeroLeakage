@@ -167,11 +167,13 @@ public static class DefenderService
     public sealed record ScanOutcome(bool Completed, IReadOnlyList<DefenderDetection> NewDetections, TimeSpan Duration, string Message);
 
     /// <summary>Runs a Defender quick (1) or full (2) scan. Reports elapsed time; Defender does not expose a percentage.</summary>
-    public static async Task<ScanOutcome> ScanAsync(bool full, IProgress<TimeSpan> elapsed, CancellationToken ct)
+    /// <param name="path">When set, a custom scan of just this file or folder (ScanType 3).</param>
+    public static async Task<ScanOutcome> ScanAsync(bool full, IProgress<TimeSpan> elapsed, CancellationToken ct, string? path = null)
     {
         if (!File.Exists(MpCmdRun)) return new(false, Array.Empty<DefenderDetection>(), TimeSpan.Zero, "Microsoft Defender command-line tool not found.");
         var started = DateTime.UtcNow;
-        var psi = new ProcessStartInfo(MpCmdRun, $"-Scan -ScanType {(full ? 2 : 1)}")
+        var args = path is null ? $"-Scan -ScanType {(full ? 2 : 1)}" : $"-Scan -ScanType 3 -File \"{path.TrimEnd('\\')}\"";
+        var psi = new ProcessStartInfo(MpCmdRun, args)
         {
             UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardOutput = true, RedirectStandardError = true,

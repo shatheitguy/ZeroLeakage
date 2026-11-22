@@ -1,0 +1,62 @@
+# OS & OEM telemetry endpoints. One domain per line; subdomains are matched automatically.
+# Google / Android
+firebaselogging-pa.googleapis.com
+firebaselogging.googleapis.com
+app-measurement.com
+app-analytics-services.com
+crashlyticsreports-pa.googleapis.com
+www.google-analytics.com
+ssl.google-analytics.com
+google-analytics.com
+# Samsung
+dc.samsungelectronics.com
+samsung-com.112.2o7.net
+analytics-api.samsunghealthcn.com
+nmetrics.samsung.com
+samsungads.com
+ad.samsungadhub.com
+config.samsungads.com
+gpm.samsungqbe.com
+log-config.samsungacr.com
+samsungacr.com
+# Xiaomi / MIUI
+tracking.miui.com
+data.mistat.xiaomi.com
+data.mistat.intl.xiaomi.com
+data.mistat.india.xiaomi.com
+data.mistat.rus.xiaomi.com
+sdkconfig.ad.xiaomi.com
+sdkconfig.ad.intl.xiaomi.com
+api.ad.xiaomi.com
+globalapi.ad.xiaomi.com
+tracking.intl.miui.com
+tracking.india.miui.com
+tracking.rus.miui.com
+# Huawei / Honor
+metrics.data.hicloud.com
+metrics1.data.hicloud.com
+metrics2.data.hicloud.com
+logservice.hicloud.com
+logservice1.hicloud.com
+# OnePlus / Oppo / Realme
+open.oneplus.net
+analytics.oneplus.cn
+click.oneplus.cn
+iot.oppomobile.com
+data.ads.oppomobile.com
+adsfs.oppomobile.com
+# Meta
+connect.facebook.net
+an.facebook.com
+pixel.facebook.com
+# Microsoft (Android apps)
+mobile.events.data.microsoft.com
+browser.events.data.msn.com
+self.events.data.microsoft.com
+v10.events.data.microsoft.com
+watson.telemetry.microsoft.com
+# Misc
+telemetry.mozilla.org
+incoming.telemetry.mozilla.org
+telemetry.dropbox.com
+metrics.icloud.com
