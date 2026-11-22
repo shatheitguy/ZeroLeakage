@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Launcher tile colour (matches the Windows icon tile). -->
+    <color name="icon_tile">#FF12151E</color>
+</resources>

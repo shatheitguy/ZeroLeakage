@@ -107,4 +107,22 @@
     <Geometry x:Key="Geo.Drop">M12,6.4 C14.6,9.6 16.1,11.9 16.1,14.1 A4.1,4.1 0 0 1 7.9,14.1 C7.9,11.9 9.4,9.6 12,6.4 Z</Geometry>
     <Geometry x:Key="Geo.Slash">M8.4,18.4 L15.6,9.6</Geometry>
 
+    <!-- Brand mark "Negative-space shield": shield with a slashed zero cut out (24x24 grid). -->
+    <PathGeometry x:Key="Geo.ShieldOutline"
+                  Figures="M12,1.44 L20.58,4.74 L20.58,12 C20.58,17.28 16.62,20.58 12,22.56 C7.38,20.58 3.42,17.28 3.42,12 L3.42,4.74 Z" />
+    <CombinedGeometry x:Key="Geo.ShieldMark" GeometryCombineMode="Exclude">
+        <CombinedGeometry.Geometry1>
+            <PathGeometry Figures="M12,1.44 L20.58,4.74 L20.58,12 C20.58,17.28 16.62,20.58 12,22.56 C7.38,20.58 3.42,17.28 3.42,12 L3.42,4.74 Z" />
+        </CombinedGeometry.Geometry1>
+        <CombinedGeometry.Geometry2>
+            <GeometryGroup FillRule="Nonzero">
+                <CombinedGeometry GeometryCombineMode="Exclude">
+                    <CombinedGeometry.Geometry1><EllipseGeometry Center="12,11.67" RadiusX="4.29" RadiusY="5.94" /></CombinedGeometry.Geometry1>
+                    <CombinedGeometry.Geometry2><EllipseGeometry Center="12,11.67" RadiusX="2.31" RadiusY="3.96" /></CombinedGeometry.Geometry2>
+                </CombinedGeometry>
+                <PathGeometry Figures="M9.92,15.66 L15.2,7.4 L14.08,6.68 L8.8,14.94 Z" />
+            </GeometryGroup>
+        </CombinedGeometry.Geometry2>
+    </CombinedGeometry>
+
 </ResourceDictionary>

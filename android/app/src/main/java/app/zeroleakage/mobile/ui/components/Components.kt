@@ -90,36 +90,15 @@ fun GlassCard(
 fun Overline(text: String, modifier: Modifier = Modifier, color: Color = Zl.TextMuted) =
     Text(text.uppercase(), modifier, style = Zl.overline.copy(color = color))
 
-/** Hexagon + zero-drop brand mark. */
+/** "Negative-space shield" brand mark (see ShieldMark.kt). */
 @Composable
 fun BrandMark(color: Color, modifier: Modifier = Modifier.size(24.dp)) {
-    Canvas(modifier) { drawBrandMark(color, size.minDimension, stroke = size.minDimension / 13f) }
+    Canvas(modifier) { drawShieldMarkCentered(color, size.minDimension) }
 }
 
-private fun DrawScope.drawBrandMark(color: Color, extent: Float, stroke: Float, fillDrop: Boolean = true) {
-    val c = center
-    val r = extent * 0.46f
-    val hex = Path().apply {
-        for (i in 0 until 6) {
-            val a = Math.toRadians((60.0 * i) - 90.0)
-            val x = c.x + r * cos(a).toFloat()
-            val y = c.y + r * sin(a).toFloat()
-            if (i == 0) moveTo(x, y) else lineTo(x, y)
-        }
-        close()
-    }
-    drawPath(hex, color, style = Stroke(width = stroke, join = StrokeJoin.Round))
-    val s = extent / 24f
-    val drop = Path().apply {
-        moveTo(c.x, c.y - 5.6f * s)
-        cubicTo(c.x + 2.6f * s, c.y - 2.4f * s, c.x + 4.1f * s, c.y - 0.1f * s, c.x + 4.1f * s, c.y + 2.1f * s)
-        cubicTo(c.x + 4.1f * s, c.y + 4.4f * s, c.x + 2.3f * s, c.y + 6.2f * s, c.x, c.y + 6.2f * s)
-        cubicTo(c.x - 2.3f * s, c.y + 6.2f * s, c.x - 4.1f * s, c.y + 4.4f * s, c.x - 4.1f * s, c.y + 2.1f * s)
-        cubicTo(c.x - 4.1f * s, c.y - 0.1f * s, c.x - 2.6f * s, c.y - 2.4f * s, c.x, c.y - 5.6f * s)
-        close()
-    }
-    if (fillDrop) drawPath(drop, color) else drawPath(drop, color, style = Stroke(stroke * 0.8f))
-}
+@Suppress("UNUSED_PARAMETER")
+private fun DrawScope.drawBrandMark(color: Color, extent: Float, stroke: Float) =
+    drawShieldMarkCentered(color, extent)
 
 /** Radial "sonar" pulse showing the shield is live. Rings freeze when [active] is false. */
 @Composable

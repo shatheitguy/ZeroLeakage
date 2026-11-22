@@ -27,6 +27,9 @@
     <!-- Classic install-directory wizard; dark-themed app takes over after first launch. -->
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
     <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
+    <!-- Brand artwork (regenerate with windows\tools\New-InstallerArt.ps1). -->
+    <WixVariable Id="WixUIBannerBmp" Value="Art\Banner.bmp" />
+    <WixVariable Id="WixUIDialogBmp" Value="Art\Dialog.bmp" />
 
     <!-- Offer to launch ZeroLeakage on the final page. -->
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch ZeroLeakage" />

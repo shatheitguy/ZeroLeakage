@@ -33,6 +33,14 @@ public partial class App : Application
         var settings = UiSettingsStore.Load();
         ThemeManager.Initialize(Resources, settings.Mode);
 
+        bool startInTray = e.Args.Any(a => a.Equals("--tray", StringComparison.OrdinalIgnoreCase));
+        SplashWindow? splash = null;
+        if (!startInTray)
+        {
+            splash = new SplashWindow();
+            splash.Show();
+        }
+
         // Swap SimulatedProtectionEngine for the ZeroLeakage Core service client when it is available.
         _engine = new SimulatedProtectionEngine();
         _engine.SetModeAsync(settings.Mode);
@@ -45,10 +53,21 @@ public partial class App : Application
 
         _engine.Start();
 
-        bool startInTray = e.Args.Any(a => a.Equals("--tray", StringComparison.OrdinalIgnoreCase));
-        if (!startInTray) _window.Show();
-
         if (!settings.WizardCompleted) shell.Wizard.Open();
+
+        if (splash is not null)
+        {
+            // Let the splash animation play through once, then hand over to the main window.
+            var handover = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1700) };
+            handover.Tick += (_, _) =>
+            {
+                handover.Stop();
+                _window.Show();
+                _window.Activate();
+                splash.FadeOutAndClose();
+            };
+            handover.Start();
+        }
 
         // Dev aid: `ZeroLeakage.exe --selftest` walks every page, the wizard and all three modes,
         // then exits with code 0 (clean) or 1 (errors written to ui-errors.log).

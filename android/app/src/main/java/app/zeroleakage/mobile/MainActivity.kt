@@ -12,11 +12,23 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import app.zeroleakage.mobile.ui.ZeroLeakageApp
+import app.zeroleakage.mobile.ui.components.SplashOverlay
 import app.zeroleakage.mobile.ui.theme.ZeroLeakageTheme
 import app.zeroleakage.mobile.vpn.ZeroLeakVpnService
 
@@ -27,7 +39,18 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(0xFF090A0F.toInt()),
             navigationBarStyle = SystemBarStyle.dark(0xFF090A0F.toInt()),
         )
-        setContent { ZeroLeakageTheme { ZeroLeakageApp() } }
+        val coldStart = savedInstanceState == null
+        setContent {
+            ZeroLeakageTheme {
+                var showSplash by rememberSaveable { mutableStateOf(coldStart) }
+                Box(Modifier.fillMaxSize()) {
+                    ZeroLeakageApp()
+                    AnimatedVisibility(showSplash, enter = EnterTransition.None, exit = fadeOut(tween(320))) {
+                        SplashOverlay(onFinished = { showSplash = false })
+                    }
+                }
+            }
+        }
     }
 }
 

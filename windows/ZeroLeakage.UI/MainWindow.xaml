@@ -49,9 +49,7 @@
                 <StackPanel Orientation="Horizontal" Margin="24,0,0,0" VerticalAlignment="Center">
                     <Viewbox Width="24" Height="24">
                         <Canvas Width="24" Height="24">
-                            <Path Data="{StaticResource Geo.Hexagon}" Stroke="{DynamicResource Brush.ModeAccent}" StrokeThickness="1.8" StrokeLineJoin="Round" />
-                            <Path Data="{StaticResource Geo.Drop}" Fill="{DynamicResource Brush.ModeAccentSoft}" Stroke="{DynamicResource Brush.ModeAccent}" StrokeThickness="1.4" />
-                            <Path Data="{StaticResource Geo.Slash}" Stroke="{DynamicResource Brush.ModeAccent}" StrokeThickness="1.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            <Path Data="{StaticResource Geo.ShieldMark}" Fill="{DynamicResource Brush.ModeAccent}" />
                         </Canvas>
                     </Viewbox>
                     <TextBlock Margin="12,0,0,0" VerticalAlignment="Center" FontSize="14.5" FontWeight="SemiBold">

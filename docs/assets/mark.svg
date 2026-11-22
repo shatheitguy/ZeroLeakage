@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="16 12 64 72" width="64" height="72" role="img" aria-label="ZeroLeakage mark">
+  <defs>
+    <mask id="cut" maskUnits="userSpaceOnUse" x="0" y="0" width="96" height="96">
+      <rect width="96" height="96" fill="#fff"/>
+      <ellipse cx="48" cy="47" rx="10" ry="15" fill="none" stroke="#000" stroke-width="6"/>
+      <line x1="40" y1="58" x2="56" y2="36" stroke="#000" stroke-width="4" stroke-linecap="round"/>
+    </mask>
+  </defs>
+  <path d="M48,16 L74,26 L74,48 C74,64 62,74 48,80 C34,74 22,64 22,48 L22,26 Z" fill="#00F5A0" mask="url(#cut)"/>
+</svg>

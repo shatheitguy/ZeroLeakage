@@ -1,11 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Status-bar version of the shield mark (alpha only). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <path
-        android:pathData="M12,1.2 L21.6,6.6 L21.6,17.4 L12,22.8 L2.4,17.4 L2.4,6.6 Z M12,6.4 C9.4,9.6 7.9,11.9 7.9,14.1 A4.1,4.1 0 0 0 16.1,14.1 C16.1,11.9 14.6,9.6 12,6.4 Z"
-        android:fillType="evenOdd"
-        android:fillColor="#FFFFFFFF" />
+    <group android:scaleX="0.33" android:scaleY="0.33" android:translateX="-3.84" android:translateY="-3.84">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M48,16 L74,26 L74,48 C74,64 62,74 48,80 C34,74 22,64 22,48 L22,26 Z M35,47 A13,18 0 1,0 61,47 A13,18 0 1,0 35,47 Z" />
+        <group>
+            <clip-path android:pathData="M67.26,23.91 L91.53,41.55 L56.25,90.09 L31.98,72.45 Z" />
+            <path android:fillColor="#FFFFFFFF" android:pathData="M41,47 A7,12 0 1,0 55,47 A7,12 0 1,0 41,47 Z" />
+        </group>
+        <group>
+            <clip-path android:pathData="M64.02,21.55 L28.74,70.09 L4.47,52.45 L39.75,3.91 Z" />
+            <path android:fillColor="#FFFFFFFF" android:pathData="M41,47 A7,12 0 1,0 55,47 A7,12 0 1,0 41,47 Z" />
+        </group>
+    </group>
 </vector>
