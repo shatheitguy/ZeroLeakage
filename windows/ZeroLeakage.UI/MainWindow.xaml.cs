@@ -15,6 +15,8 @@ public partial class MainWindow : Window
     private bool _allowClose;
 
     public event Action? ExitRequested;
+    /// <summary>Raised after the window has been hidden to the notification area.</summary>
+    public event Action? HiddenToTray;
 
     public MainWindow(MainViewModel viewModel, UiSettings settings)
     {
@@ -88,6 +90,7 @@ public partial class MainWindow : Window
         fade.Completed += (_, _) =>
         {
             Hide();
+            HiddenToTray?.Invoke();
             RootBorder.BeginAnimation(OpacityProperty, null);
             RootScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
             RootScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);

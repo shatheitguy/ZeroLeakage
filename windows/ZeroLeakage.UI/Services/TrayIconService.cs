@@ -61,32 +61,61 @@ public sealed class TrayIconService : IDisposable
         _icon.Text = $"ZeroLeakage — {_shell.ModeLabel}";
     }
 
-    /// <summary>Draws the hexagon + drop brand mark so no binary asset is required at runtime.</summary>
+    /// <summary>
+    /// Draws the shield brand mark (dark rounded tile, mint shield, slashed zero cut out) so it reads on both
+    /// light and dark taskbars and no binary asset is needed at runtime. Geometry matches tools/New-AppIcon.ps1.
+    /// </summary>
     private Icon CreateIcon()
     {
-        using var bmp = new Bitmap(32, 32);
+        int size = Math.Max(16, WinForms.SystemInformation.SmallIconSize.Width * 2);
+        using var bmp = new Bitmap(size, size);
         using (var g = Graphics.FromImage(bmp))
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
             g.Clear(Color.Transparent);
-            var mint = Color.FromArgb(0x00, 0xF5, 0xA0);
-            var hex = new PointF[6];
-            for (int i = 0; i < 6; i++)
-            {
-                double a = Math.PI / 180 * (60 * i - 90);
-                hex[i] = new PointF(16 + 14f * (float)Math.Cos(a), 16 + 14f * (float)Math.Sin(a));
-            }
-            using var fill = new SolidBrush(Color.FromArgb(0x09, 0x0A, 0x0F));
-            g.FillPolygon(fill, hex);
-            using var pen = new Pen(mint, 2.6f) { LineJoin = LineJoin.Round };
-            g.DrawPolygon(pen, hex);
-            using var drop = new SolidBrush(mint);
-            g.FillEllipse(drop, 11.5f, 13f, 9f, 9f);
-            g.FillPolygon(drop, new[] { new PointF(16, 7.5f), new PointF(20.2f, 15f), new PointF(11.8f, 15f) });
+            var tile = Color.FromArgb(0x12, 0x15, 0x1E);
+            float s = size / 96f;
+            using (var tilePath = RoundRect(0, 0, size - 1, size - 1, 22 * s))
+            using (var tileBrush = new SolidBrush(tile))
+                g.FillPath(tileBrush, tilePath);
+
+            // Slightly enlarged shield so it stays legible at 16-20 px.
+            float k = s * 1.2f, o = size / 2f - 48 * k;
+            PointF P(float x, float y) => new(o + x * k, o + y * k);
+            using var shield = new GraphicsPath();
+            shield.AddLine(P(48, 16), P(74, 26));
+            shield.AddLine(P(74, 26), P(74, 48));
+            shield.AddBezier(P(74, 48), P(74, 64), P(62, 74), P(48, 80));
+            shield.AddBezier(P(48, 80), P(34, 74), P(22, 64), P(22, 48));
+            shield.AddLine(P(22, 48), P(22, 26));
+            shield.CloseFigure();
+            using (var mint = new SolidBrush(Color.FromArgb(0x00, 0xF5, 0xA0))) g.FillPath(mint, shield);
+            using (var ring = new Pen(tile, 6 * k)) g.DrawEllipse(ring, o + 38 * k, o + 32 * k, 20 * k, 30 * k);
+            using (var slash = new Pen(tile, 4 * k) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+                g.DrawLine(slash, P(40, 58), P(56, 36));
         }
         _hIcon = bmp.GetHicon();
         return Icon.FromHandle(_hIcon);
     }
+
+    private static GraphicsPath RoundRect(float x, float y, float w, float h, float r)
+    {
+        var p = new GraphicsPath();
+        float d = 2 * r;
+        p.AddArc(x, y, d, d, 180, 90);
+        p.AddArc(x + w - d, y, d, d, 270, 90);
+        p.AddArc(x + w - d, y + h - d, d, d, 0, 90);
+        p.AddArc(x, y + h - d, d, d, 90, 90);
+        p.CloseFigure();
+        return p;
+    }
+
+    /// <summary>One-time tip shown the first time the window is closed to the tray.</summary>
+    public void ShowStillRunningHint() =>
+        _icon.ShowBalloonTip(5000, "ZeroLeakage is still protecting you",
+            "It keeps running in the background. Open it from this icon; use Exit in its menu to stop it.",
+            WinForms.ToolTipIcon.None);
 
     public void Dispose()
     {

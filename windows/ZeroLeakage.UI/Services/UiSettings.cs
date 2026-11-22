@@ -9,7 +9,11 @@ public sealed class UiSettings
 {
     public bool WizardCompleted { get; set; }
     public bool MinimizeToTray { get; set; } = true;
-    public bool StartWithWindows { get; set; }
+    public bool StartWithWindows { get; set; } = true;
+    /// <summary>Set once auto-start has been switched on by default, so a later "off" is respected.</summary>
+    public bool AutoStartDefaulted { get; set; }
+    /// <summary>The "still running in the tray" hint is shown only the first time the window is closed.</summary>
+    public bool TrayHintShown { get; set; }
     public bool AutoUpdateDefinitions { get; set; } = true;
     public int UpdateWindowMinutes { get; set; } = 15;
     public ProtectionMode Mode { get; set; } = ProtectionMode.Balanced;

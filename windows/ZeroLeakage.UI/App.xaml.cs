@@ -27,20 +27,31 @@ public partial class App : Application
         base.OnStartup(e);
 
         // The self-test gets its own lock so it can run next to an installed copy.
-        var lockName = e.Args.Contains("--selftest") ? @"Local\ZeroLeakage.UI.SelfTest" : @"Local\ZeroLeakage.UI.SingleInstance";
+        bool selfTest = e.Args.Contains("--selftest");
+        bool startInTray = e.Args.Any(a => a.Equals("--tray", StringComparison.OrdinalIgnoreCase));
+        var lockName = selfTest ? @"Local\ZeroLeakage.UI.SelfTest" : @"Local\ZeroLeakage.UI.SingleInstance";
         _singleInstance = new Mutex(true, lockName, out bool isFirst);
         if (!isFirst)
         {
+            // Already running (usually hidden in the tray): bring that window forward instead of starting twice.
+            if (!startInTray && !selfTest && EventWaitHandle.TryOpenExisting(ShowSignalName, out var signal))
+            {
+                signal.Set();
+                signal.Dispose();
+            }
+            _singleInstance.Dispose();
+            _singleInstance = null;
             Shutdown();
             return;
         }
 
         DispatcherUnhandledException += OnUnhandledException;
+        // Sign-out, shutdown, or an installer asking us to close (Restart Manager): exit for real, don't hide.
+        SessionEnding += (_, _) => ExitApplication();
 
         var settings = UiSettingsStore.Load();
         ThemeManager.Initialize(Resources, settings.Mode);
-
-        bool startInTray = e.Args.Any(a => a.Equals("--tray", StringComparison.OrdinalIgnoreCase));
+        if (!selfTest) AutoStart.EnsureOnLaunch(settings);
         SplashWindow? splash = null;
         if (!startInTray)
         {
@@ -59,6 +70,14 @@ public partial class App : Application
         _tray = new TrayIconService(_window, shell, ExitApplication);
         _toasts = new ConnectToastService(_engine, Dispatcher);
         _window.ExitRequested += ExitApplication;
+        _window.HiddenToTray += () =>
+        {
+            if (settings.TrayHintShown || selfTest) return;
+            settings.TrayHintShown = true;
+            UiSettingsStore.Save(settings);
+            _tray?.ShowStillRunningHint();
+        };
+        if (!selfTest) ListenForShowSignal();
 
         _engine.Start();
         _ = Filters.StartAsync();
@@ -134,8 +153,36 @@ public partial class App : Application
         Environment.ExitCode = code;
     }
 
+    private const string ShowSignalName = @"Local\ZeroLeakage.UI.Show";
+    private EventWaitHandle? _showSignal;
+
+    /// <summary>A second launch (Start menu, desktop shortcut) sets this event; we answer by showing the window.</summary>
+    private void ListenForShowSignal()
+    {
+        _showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, ShowSignalName);
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                while (_showSignal.WaitOne())
+                {
+                    if (_exiting) return;
+                    Dispatcher.BeginInvoke(new Action(() => _window?.ShowFromTray()));
+                }
+            }
+            catch (ObjectDisposedException) { }
+        }) { IsBackground = true, Name = "zl-show-signal" };
+        thread.Start();
+    }
+
+    private bool _exiting;
+
     private void ExitApplication()
     {
+        if (_exiting) return;
+        _exiting = true;
+        _showSignal?.Set();
+        _showSignal?.Dispose();
         _window?.AllowClose();
         _toasts?.Dispose();
         _tray?.Dispose();
