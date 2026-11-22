@@ -13,6 +13,11 @@ public partial class App : Application
 {
     private Mutex? _singleInstance;
     private IProtectionEngine? _engine;
+
+    /// <summary>Real filter-list subscriptions (shared by the engine and the DNS page).</summary>
+    public static ZeroLeakage.UI.Services.Dns.FilterListService Filters { get; private set; } = null!;
+    /// <summary>Offline IP-to-country database.</summary>
+    public static ZeroLeakage.UI.Services.Dns.GeoIpService GeoIp { get; private set; } = null!;
     private TrayIconService? _tray;
     private ConnectToastService? _toasts;
     private MainWindow? _window;
@@ -21,7 +26,9 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
-        _singleInstance = new Mutex(true, @"Local\ZeroLeakage.UI.SingleInstance", out bool isFirst);
+        // The self-test gets its own lock so it can run next to an installed copy.
+        var lockName = e.Args.Contains("--selftest") ? @"Local\ZeroLeakage.UI.SelfTest" : @"Local\ZeroLeakage.UI.SingleInstance";
+        _singleInstance = new Mutex(true, lockName, out bool isFirst);
         if (!isFirst)
         {
             Shutdown();
@@ -42,7 +49,9 @@ public partial class App : Application
         }
 
         // Swap SimulatedProtectionEngine for the ZeroLeakage Core service client when it is available.
-        _engine = new SimulatedProtectionEngine();
+        Filters = new ZeroLeakage.UI.Services.Dns.FilterListService();
+        GeoIp = new ZeroLeakage.UI.Services.Dns.GeoIpService();
+        _engine = new SimulatedProtectionEngine(Filters);
         _engine.SetModeAsync(settings.Mode);
 
         var shell = new MainViewModel(_engine, settings);
@@ -52,6 +61,7 @@ public partial class App : Application
         _window.ExitRequested += ExitApplication;
 
         _engine.Start();
+        _ = Filters.StartAsync();
 
         if (!settings.WizardCompleted) shell.Wizard.Open();
 
@@ -97,6 +107,24 @@ public partial class App : Application
         shell.DeepScan.QuickScanCommand.Execute(null);
         await Wait(12000);
         shell.Mode = Models.ProtectionMode.Balanced;
+
+        // DNS page: every tab, a live DNSSEC check, and the packet inspector on a real domain.
+        shell.SelectedNav = shell.NavItems.First(n => n.Page == shell.Dns);
+        for (int t = 0; t < 4; t++) { shell.Dns.Tab = t; await Wait(700); }
+        shell.Dns.Tab = 1;
+        shell.Dns.TestDnssecCommand.Execute(null);
+        var probeEvent = new Models.FeedEvent(DateTime.Now, Models.FeedVerdict.Allowed, "brave.exe", null, "cloudflare.com", 443, "HTTPS");
+        var inspectorVm = new ViewModels.PacketInspectorViewModel(probeEvent, _engine!);
+        var inspector = new Views.PacketInspectorWindow(inspectorVm) { Owner = _window };
+        if (Environment.GetEnvironmentVariable("ZL_SELFTEST_GEOIP") == "1" && !GeoIp.IsInstalled) await GeoIp.DownloadAsync();
+        inspector.Show();
+        await Wait(6000);
+        File.AppendAllText(Path.Combine(UiSettingsStore.Directory, "ui-selftest.log"),
+            $"[{DateTime.Now:O}] rules={Filters.TotalRules} lists={Filters.Lists.Count(l => l.IsEnabled)} " +
+            $"dnssec=\"{shell.Dns.DnssecTestResult}\" inspector=\"{inspectorVm.Status}\" rcode={inspectorVm.RcodeText} " +
+            $"dnssecInspector=\"{inspectorVm.DnssecText}\" answers={string.Join(" | ", inspectorVm.Answers.Select(a => $"{a.Type} {a.Data} {a.Location}"))}{Environment.NewLine}");
+        inspector.Close();
+        shell.Dns.Tab = 0;
 
         settings = UiSettingsStore.Load();
         settings.WizardCompleted = wizardWasDone;

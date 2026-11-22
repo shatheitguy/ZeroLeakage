@@ -10,6 +10,7 @@ using Microsoft.Win32;
 using ZeroLeakage.UI.Models;
 using ZeroLeakage.UI.Mvvm;
 using ZeroLeakage.UI.Services;
+using ZeroLeakage.UI.Services.Dns;
 
 namespace ZeroLeakage.UI.ViewModels;
 
@@ -97,54 +98,150 @@ public sealed class FirewallViewModel : ObservableObject
 }
 
 // ═════════════════════════════ DNS & Telemetry ═════════════════════════════
+public sealed class FilterGroupViewModel : ObservableObject
+{
+    public required string Name { get; init; }
+    public ObservableCollection<BlocklistSource> Lists { get; } = new();
+    public string CountText => $"{Lists.Count(l => l.IsEnabled)}/{Lists.Count}";
+    public void Refresh() => OnPropertyChanged(nameof(CountText));
+}
+
 public sealed class DnsTelemetryViewModel : ObservableObject
 {
     private readonly MainViewModel _shell;
     private readonly IProtectionEngine _engine;
+    private readonly FilterListService _filters;
     private DohResolver _selectedResolver;
-    private string _newDomain = "";
+    private string _newDomain = "", _newAllow = "", _newListUrl = "", _newListName = "", _customResolverUrl = "";
+    private string _dnssecTestDomain = "cloudflare.com", _dnssecTestResult = "";
+    private string? _addListError;
     private double _wipeProgress;
-    private bool _isWiping;
+    private bool _isWiping, _dnssecEnabled, _dnssecStrict, _isTestingDnssec;
     private string _lastWipeText = "Not wiped this session";
-    private int _latency;
+    private int _latency, _tab;
 
     public DnsTelemetryViewModel(MainViewModel shell, IProtectionEngine engine)
     {
         _shell = shell;
         _engine = engine;
+        _filters = App.Filters;
 
-        foreach (var b in engine.GetBlocklists())
+        foreach (var b in engine.GetBlocklists()) Hook(b);
+        RebuildGroups();
+        _filters.Lists.CollectionChanged += (_, e) =>
         {
-            b.PropertyChanged += (s, e) =>
-            {
-                if (e.PropertyName != nameof(BlocklistSource.IsEnabled) || s is not BlocklistSource list) return;
-                _ = _engine.SetBlocklistEnabledAsync(list, list.IsEnabled);
-                OnPropertyChanged(nameof(ActiveEntriesText));
-            };
-            Blocklists.Add(b);
-        }
+            if (e.NewItems is not null) foreach (BlocklistSource b in e.NewItems) Hook(b);
+            RebuildGroups();
+        };
+        _filters.IndexRebuilt += (_, _) => Ui.Post(() => OnPropertyChanged(nameof(ActiveEntriesText)));
+
         foreach (var r in engine.GetResolvers()) Resolvers.Add(r);
         foreach (var t in engine.GetTelemetryServices()) TelemetryServices.Add(t);
-        _selectedResolver = Resolvers[0];
+        _selectedResolver = engine.CurrentResolver;
+        _dnssecEnabled = engine.DnssecEnabled;
+        _dnssecStrict = engine.DnssecStrict;
 
-        AddDomainCommand = new AsyncRelayCommand(AddDomainAsync, () => NormalizeDomain(NewDomain) is not null);
-        RemoveDomainCommand = new AsyncRelayCommand(async p =>
+        AddDomainCommand = new RelayCommand(() =>
         {
-            if (p is not string d) return;
-            await _engine.UnblockDomainAsync(d);
-            CustomDomains.Remove(d);
+            var d = _filters.Block(NewDomain);
+            if (d is null) return;
+            NewDomain = "";
+            _shell.ShowSnackbar($"Blocked domain {d}");
+        }, () => FilterParser.Normalize(NewDomain) is not null);
+        RemoveDomainCommand = new RelayCommand(p => { if (p is string d) _filters.RemoveBlock(d); });
+        AddAllowCommand = new RelayCommand(() =>
+        {
+            var d = _filters.Allow(NewAllow);
+            if (d is null) return;
+            NewAllow = "";
+            _shell.ShowSnackbar($"Allowlisted {d}");
+        }, () => FilterParser.Normalize(NewAllow) is not null);
+        RemoveAllowCommand = new RelayCommand(p => { if (p is string d) _filters.RemoveAllow(d); });
+
+        UpdateAllCommand = new AsyncRelayCommand(async () =>
+        {
+            _shell.ShowSnackbar("Updating enabled filter lists…");
+            await _filters.UpdateAllAsync();
+            _shell.ShowSnackbar($"Filters updated · {_filters.TotalRules:N0} rules active");
         });
+        UpdateListCommand = new AsyncRelayCommand(async p => { if (p is BlocklistSource l) await _filters.UpdateAsync(l); });
+        RemoveListCommand = new AsyncRelayCommand(async p => { if (p is BlocklistSource l) await _filters.RemoveCustomAsync(l); });
+        OpenHomepageCommand = new RelayCommand(p =>
+        {
+            if (p is BlocklistSource { Homepage: { } url }) OpenUrl(url);
+        });
+        AddListCommand = new AsyncRelayCommand(async () =>
+        {
+            AddListError = null;
+            var err = await _filters.AddCustomAsync(NewListUrl, NewListName);
+            if (err is null) { NewListUrl = ""; NewListName = ""; _shell.ShowSnackbar("Filter list added"); }
+            else AddListError = err;
+        }, () => NewListUrl.Trim().Length > 8);
+
+        UseCustomResolverCommand = new RelayCommand(() =>
+        {
+            var url = CustomResolverUrl.Trim();
+            if (!url.StartsWith("https://", StringComparison.OrdinalIgnoreCase) || !Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            {
+                _shell.ShowSnackbar("DoH endpoints must be https:// URLs");
+                return;
+            }
+            var existing = Resolvers.FirstOrDefault(r => r.IsCustom);
+            if (existing is not null) Resolvers.Remove(existing);
+            var custom = new DohResolver($"Custom · {uri.Host}", url, "Your own DoH endpoint", "Custom") { IsCustom = true };
+            Resolvers.Add(custom);
+            SelectedResolver = custom;
+        }, () => CustomResolverUrl.Trim().Length > 8);
+
+        TestDnssecCommand = new AsyncRelayCommand(TestDnssecAsync, () => !IsTestingDnssec);
+        DownloadGeoCommand = new AsyncRelayCommand(() => Geo.DownloadAsync());
+        DeleteGeoCommand = new RelayCommand(() => Geo.Delete());
         WipeLogsCommand = new AsyncRelayCommand(WipeAsync);
 
         engine.StatsUpdated += (_, s) => Ui.Post(() => Latency = s.DohLatencyMs);
     }
 
-    public ObservableCollection<BlocklistSource> Blocklists { get; } = new();
+    private void Hook(BlocklistSource b)
+    {
+        b.PropertyChanged += (s, e) =>
+        {
+            if (s is not BlocklistSource list) return;
+            if (e.PropertyName == nameof(BlocklistSource.IsEnabled))
+            {
+                if (!_filters.IsRestoring) _ = _engine.SetBlocklistEnabledAsync(list, list.IsEnabled);
+                OnPropertyChanged(nameof(ActiveEntriesText));
+                RefreshGroupCounts();
+            }
+        };
+    }
+
+    private void RebuildGroups()
+    {
+        Groups.Clear();
+        foreach (var name in FilterListService.GroupOrder)
+        {
+            var g = new FilterGroupViewModel { Name = name };
+            foreach (var l in _filters.Lists.Where(l => l.Group == name)) g.Lists.Add(l);
+            if (g.Lists.Count > 0) Groups.Add(g);
+        }
+    }
+
+    private void RefreshGroupCounts()
+    {
+        foreach (var g in Groups) g.Refresh();
+    }
+
+    public int Tab { get => _tab; set => SetProperty(ref _tab, value); }
+
+    public ObservableCollection<FilterGroupViewModel> Groups { get; } = new();
     public ObservableCollection<DohResolver> Resolvers { get; } = new();
     public ObservableCollection<TelemetryServiceStatus> TelemetryServices { get; } = new();
-    public ObservableCollection<string> CustomDomains { get; } = new();
+    public ObservableCollection<string> CustomDomains => _filters.UserBlock;
+    public ObservableCollection<string> AllowDomains => _filters.UserAllow;
+    public GeoIpService Geo => App.GeoIp;
+    public string GeoAttribution => GeoIpService.Attribution;
 
-    public string ActiveEntriesText => $"{Blocklists.Where(b => b.IsEnabled).Sum(b => b.EntryCount):N0} domains enforced";
+    public string ActiveEntriesText => $"{_filters.TotalRules:N0} rules · {_filters.Lists.Count(l => l.IsEnabled)} lists";
 
     public DohResolver SelectedResolver
     {
@@ -157,41 +254,96 @@ public sealed class DnsTelemetryViewModel : ObservableObject
         }
     }
 
+    public string CustomResolverUrl { get => _customResolverUrl; set => SetProperty(ref _customResolverUrl, value ?? ""); }
+
+    public bool DnssecEnabled
+    {
+        get => _dnssecEnabled;
+        set
+        {
+            if (!SetProperty(ref _dnssecEnabled, value)) return;
+            if (!value) DnssecStrict = false;
+            _ = _engine.SetDnssecAsync(value, _dnssecStrict);
+            _shell.ShowSnackbar(value ? "DNSSEC validation on" : "DNSSEC validation off");
+        }
+    }
+
+    public bool DnssecStrict
+    {
+        get => _dnssecStrict;
+        set
+        {
+            if (!SetProperty(ref _dnssecStrict, value && _dnssecEnabled)) return;
+            _ = _engine.SetDnssecAsync(_dnssecEnabled, _dnssecStrict);
+        }
+    }
+
+    public string DnssecTestDomain { get => _dnssecTestDomain; set => SetProperty(ref _dnssecTestDomain, value ?? ""); }
+    public string DnssecTestResult { get => _dnssecTestResult; private set => SetProperty(ref _dnssecTestResult, value); }
+    public bool IsTestingDnssec { get => _isTestingDnssec; private set => SetProperty(ref _isTestingDnssec, value); }
+
     public int Latency { get => _latency; private set { if (SetProperty(ref _latency, value)) OnPropertyChanged(nameof(LatencyText)); } }
     public string LatencyText => $"{_latency} ms";
 
     public string NewDomain { get => _newDomain; set => SetProperty(ref _newDomain, value ?? ""); }
+    public string NewAllow { get => _newAllow; set => SetProperty(ref _newAllow, value ?? ""); }
+    public string NewListUrl { get => _newListUrl; set => SetProperty(ref _newListUrl, value ?? ""); }
+    public string NewListName { get => _newListName; set => SetProperty(ref _newListName, value ?? ""); }
+    public string? AddListError { get => _addListError; private set => SetProperty(ref _addListError, value); }
+
     public ICommand AddDomainCommand { get; }
     public ICommand RemoveDomainCommand { get; }
+    public ICommand AddAllowCommand { get; }
+    public ICommand RemoveAllowCommand { get; }
+    public ICommand UpdateAllCommand { get; }
+    public ICommand UpdateListCommand { get; }
+    public ICommand RemoveListCommand { get; }
+    public ICommand OpenHomepageCommand { get; }
+    public ICommand AddListCommand { get; }
+    public ICommand UseCustomResolverCommand { get; }
+    public ICommand TestDnssecCommand { get; }
+    public ICommand DownloadGeoCommand { get; }
+    public ICommand DeleteGeoCommand { get; }
 
     public double WipeProgress { get => _wipeProgress; private set => SetProperty(ref _wipeProgress, value); }
     public bool IsWiping { get => _isWiping; private set => SetProperty(ref _isWiping, value); }
     public string LastWipeText { get => _lastWipeText; private set => SetProperty(ref _lastWipeText, value); }
     public ICommand WipeLogsCommand { get; }
 
-    public void AddCustomDomainFromFeed(string domain)
+    /// <summary>Kept for callers from the live feed; the domain is already in the shared blocklist.</summary>
+    public void AddCustomDomainFromFeed(string domain) { }
+
+    public static void OpenUrl(string url)
     {
-        if (!CustomDomains.Contains(domain, StringComparer.OrdinalIgnoreCase)) CustomDomains.Insert(0, domain);
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine(ex); }
     }
 
-    private static string? NormalizeDomain(string raw)
+    private async Task TestDnssecAsync()
     {
-        var d = raw.Trim().ToLowerInvariant();
-        if (d.StartsWith("http://")) d = d[7..];
-        if (d.StartsWith("https://")) d = d[8..];
-        d = d.Split('/')[0];
-        return d.Length > 3 && d.Contains('.') && !d.Contains(' ') ? d : null;
+        var d = FilterParser.Normalize(DnssecTestDomain);
+        if (d is null) { DnssecTestResult = "Enter a domain like cloudflare.com"; return; }
+        IsTestingDnssec = true;
+        DnssecTestResult = $"Asking {SelectedResolver.Name}…";
+        try
+        {
+            var r = await DohProbe.ResolveAsync(d, 1, SelectedResolver.Name, SelectedResolver.Address, dnssec: true);
+            DnssecTestResult = r.Error is not null
+                ? $"{d}: lookup failed — {r.Error}"
+                : $"{d} → {DnssecLabel(r.Dnssec)} · {DnsWire.RcodeName(r.Rcode)} · flags [{r.ResponseFlags}] · {r.LatencyMs} ms via {r.Resolver}"
+                  + (r.Ede is { } ede ? $" · EDE: {DnsWire.EdeName(ede)}" : "");
+        }
+        finally { IsTestingDnssec = false; }
     }
 
-    private async Task AddDomainAsync()
+    public static string DnssecLabel(DnssecStatus s) => s switch
     {
-        var d = NormalizeDomain(NewDomain);
-        if (d is null) return;
-        await _engine.BlockDomainAsync(d);
-        AddCustomDomainFromFeed(d);
-        NewDomain = "";
-        _shell.ShowSnackbar($"Blocked domain {d}");
-    }
+        DnssecStatus.Secure => "DNSSEC validated (AD)",
+        DnssecStatus.Insecure => "not DNSSEC-signed",
+        DnssecStatus.Bogus => "DNSSEC FAILED (bogus)",
+        DnssecStatus.Off => "DNSSEC not requested",
+        _ => "not checked",
+    };
 
     private async Task WipeAsync()
     {

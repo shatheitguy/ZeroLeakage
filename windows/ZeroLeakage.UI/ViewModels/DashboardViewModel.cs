@@ -39,8 +39,16 @@ public sealed class DashboardViewModel : ObservableObject
         {
             if (p is not FeedEvent e) return;
             await _engine.BlockDomainAsync(e.Destination);
-            Shell.Dns.AddCustomDomainFromFeed(e.Destination);
             Shell.ShowSnackbar($"Blocked domain {e.Destination}");
+        });
+        InspectCommand = new RelayCommand(p =>
+        {
+            if (p is not FeedEvent e) return;
+            var w = new ZeroLeakage.UI.Views.PacketInspectorWindow(new PacketInspectorViewModel(e, _engine))
+            {
+                Owner = System.Windows.Application.Current?.MainWindow,
+            };
+            w.Show();
         });
         KillAppNetworkCommand = new AsyncRelayCommand(async p =>
         {
@@ -92,6 +100,7 @@ public sealed class DashboardViewModel : ObservableObject
     public string PauseText => IsPaused ? "Resume" : "Pause";
 
     public ICommand BlockDomainCommand { get; }
+    public ICommand InspectCommand { get; }
     public ICommand KillAppNetworkCommand { get; }
     public ICommand ClearFeedCommand { get; }
     public ICommand TogglePauseCommand { get; }

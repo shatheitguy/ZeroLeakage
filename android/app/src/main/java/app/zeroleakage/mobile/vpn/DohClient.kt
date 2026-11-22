@@ -26,8 +26,11 @@ class DohClient {
         } else e.response
     }
 
-    /** Resolves [q] through [endpoint]; returns the raw DNS response and the round-trip latency in ms. */
-    fun resolve(endpoint: String, q: DnsQuery): Pair<ByteArray, Long> {
+    /**
+     * Resolves [q] through [endpoint]; returns the raw DNS response and the round-trip latency in ms.
+     * [upstream] is the message actually sent (e.g. the query with the DNSSEC AD bit added).
+     */
+    fun resolve(endpoint: String, q: DnsQuery, upstream: ByteArray = q.dns): Pair<ByteArray, Long> {
         val started = SystemClock.elapsedRealtime()
         val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
@@ -40,7 +43,7 @@ class DohClient {
         }
         try {
             // RFC 8484 §4.1: use id 0 for cache-friendliness; we re-stamp the real id afterwards.
-            val body = DnsPacket.withId(q.dns, 0)
+            val body = DnsPacket.withId(upstream, 0)
             conn.outputStream.use { it.write(body) }
             if (conn.responseCode != 200) error("DoH HTTP ${conn.responseCode}")
             val bytes = conn.inputStream.use { input ->

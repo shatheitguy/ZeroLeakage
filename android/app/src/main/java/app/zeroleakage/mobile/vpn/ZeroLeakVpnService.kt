@@ -21,9 +21,12 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import app.zeroleakage.mobile.MainActivity
 import app.zeroleakage.mobile.R
+import app.zeroleakage.mobile.data.PacketDetail
 import app.zeroleakage.mobile.data.ProtectionMode
 import app.zeroleakage.mobile.data.Verdict
 import app.zeroleakage.mobile.data.ZeroLeakage
+import app.zeroleakage.mobile.filters.FilterMatch
+import app.zeroleakage.mobile.filters.Filters
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -136,10 +139,11 @@ class ZeroLeakVpnService : VpnService() {
         running = true
         scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         ZeroLeakage.setVpnRunning(true)
+        Filters.autoUpdate()
 
         // Changing resolver or mode invalidates cached answers / temporary allowances.
         scope.launch {
-            combine(ZeroLeakage.resolverId, ZeroLeakage.mode) { r, m -> r to m }.drop(1).collect {
+            combine(ZeroLeakage.resolverId, ZeroLeakage.mode, ZeroLeakage.dnssec, ZeroLeakage.customResolverUrl) { r, m, d, c -> listOf(r, m, d, c) }.drop(1).collect {
                 doh.clear()
                 refreshNotification()
             }
@@ -167,16 +171,47 @@ class ZeroLeakVpnService : VpnService() {
             PromptNotifier.show(this, pkg, label, q.name)
         }
 
-        val response: ByteArray = if (decision.verdict != Verdict.ALLOWED) {
+        val wantDnssec = ZeroLeakage.dnssec.value
+        val resolver = ZeroLeakage.resolver()
+        var verdict = decision.verdict
+        var category = decision.category
+        var cached = false
+        var latency: Long? = null
+        var error: String? = null
+        var upstreamInfo: DnsResponseInfo? = null
+
+        var response: ByteArray = if (decision.verdict != Verdict.ALLOWED) {
             DnsPacket.errorResponse(q, rcode = 3)
         } else {
-            doh.cached(q)?.let { DnsPacket.withId(it, q.id) } ?: try {
-                val (bytes, latency) = doh.resolve(ZeroLeakage.resolver().url, q)
-                ZeroLeakage.recordLatency(latency)
+            val hit = doh.cached(q)
+            if (hit != null) {
+                cached = true
+                DnsPacket.withId(hit, q.id)
+            } else try {
+                val upstream = if (wantDnssec) DnsMessage.withAdBit(q.dns) else q.dns
+                val (bytes, ms) = doh.resolve(resolver.url, q, upstream)
+                ZeroLeakage.recordLatency(ms)
+                latency = ms
                 bytes
             } catch (e: Exception) {
                 Log.w(TAG, "DoH failed for ${q.name}: ${e.message}")
+                error = e.message ?: e.javaClass.simpleName
                 DnsPacket.errorResponse(q, rcode = 2)
+            }
+        }
+
+        var dnssec = DnssecStatus.NOT_CHECKED
+        if (decision.verdict == Verdict.ALLOWED && error == null) {
+            upstreamInfo = DnsMessage.parseResponse(response)
+            dnssec = if (wantDnssec) DnsMessage.dnssecStatus(upstreamInfo) else DnssecStatus.OFF
+            when {
+                dnssec == DnssecStatus.BOGUS -> { verdict = Verdict.BLOCKED; category = "DNSSEC Failed" }
+                dnssec == DnssecStatus.INSECURE && ZeroLeakage.dnssecStrict.value &&
+                    upstreamInfo?.rcode == 0 && upstreamInfo.answers.isNotEmpty() -> {
+                    verdict = Verdict.BLOCKED
+                    category = "DNSSEC Unsigned"
+                    response = DnsPacket.errorResponse(q, rcode = 2)
+                }
             }
         }
 
@@ -184,13 +219,48 @@ class ZeroLeakVpnService : VpnService() {
         synchronized(out) {
             try { out.write(packet) } catch (e: Exception) { if (running) Log.w(TAG, "write", e) }
         }
-        ZeroLeakage.record(decision.verdict, label, pkg, q.name, decision.category)
+
+        // upstreamInfo describes what the resolver sent; re-parse only if we replaced the answer.
+        val info = if (upstreamInfo != null && category != "DNSSEC Unsigned") upstreamInfo else DnsMessage.parseResponse(response)
+        val detail = PacketDetail(
+            uid = uid,
+            network = networkName(),
+            srcIp = ip(q.srcIp), srcPort = q.srcPort, dstIp = ip(q.dstIp), dstPort = q.dstPort,
+            ipTtl = q.ipTtl, ipId = q.ipId, ipTotalLen = q.ipTotalLen, udpLen = q.udpLen, udpChecksum = q.udpChecksum,
+            txId = q.id, qtype = q.qtype, qclass = q.qclass,
+            queryFlags = DnsMessage.headerFlags(q.dns).toString(),
+            queryEdns = DnsMessage.queryEdns(q.dns, q.questionEnd)?.let { "UDP ${it.udpSize} · v${it.version}" + if (it.dnssecOk) " · DO" else "" },
+            querySize = q.dns.size,
+            ruleList = decision.match?.listName, rule = decision.match?.rule, ruleMatched = decision.match?.matched,
+            resolverName = if (decision.verdict == Verdict.ALLOWED) resolver.name else null,
+            resolverUrl = if (decision.verdict == Verdict.ALLOWED) resolver.url else null,
+            dnssecRequested = wantDnssec && decision.verdict == Verdict.ALLOWED && !cached,
+            dnssec = dnssec,
+            cached = cached,
+            latencyMs = latency,
+            error = error,
+            rcode = info?.rcode ?: (response[3].toInt() and 0x0F),
+            responseFlags = info?.flags?.toString() ?: "",
+            responseSize = response.size,
+            answers = info?.answers ?: emptyList(),
+            authority = info?.authority ?: emptyList(),
+            ede = info?.edns?.ede?.let { code -> DnsMessage.edeName(code) + (info.edns.edeText?.let { " — $it" } ?: "") },
+            queryBytes = q.dns.copyOf(minOf(q.dns.size, 512)),
+            responseBytes = response.copyOf(minOf(response.size, 1024)),
+        )
+        ZeroLeakage.record(verdict, label, pkg, q.name, category, byFilter = decision.match != null, detail = detail)
     }
 
-    private data class Decision(val verdict: Verdict, val category: String, val prompt: Boolean = false)
+    private data class Decision(
+        val verdict: Verdict,
+        val category: String,
+        val prompt: Boolean = false,
+        val match: FilterMatch? = null,
+    )
 
     private fun decide(domain: String, pkg: String?, isSystem: Boolean): Decision {
-        ZeroLeakage.matchBlocklist(domain)?.let { return Decision(Verdict.BLOCKED, it) }
+        val match = Filters.match(domain)
+        if (match != null && match.blocked) return Decision(Verdict.BLOCKED, match.category, match = match)
 
         val mode = ZeroLeakage.mode.value
         if (pkg != null) {
@@ -208,7 +278,25 @@ class ZeroLeakVpnService : VpnService() {
         } else if (mode == ProtectionMode.LOCKDOWN) {
             return Decision(Verdict.BLOCKED, "Total Lockdown")
         }
-        return Decision(Verdict.ALLOWED, if (mode == ProtectionMode.BALANCED) "Encrypted DoH" else "Approved · DoH")
+        val okCategory = when {
+            match != null -> "Allowlisted · DoH"          // an @@ exception or your allowlist
+            mode == ProtectionMode.BALANCED -> "Encrypted DoH"
+            else -> "Approved · DoH"
+        }
+        // keep the allow match so the inspector can show which exception let it through
+        return Decision(Verdict.ALLOWED, okCategory, match = match)
+    }
+
+    private fun ip(b: ByteArray) = b.joinToString(".") { (it.toInt() and 0xFF).toString() }
+
+    private fun networkName(): String {
+        val caps = connectivity.activeNetwork?.let { connectivity.getNetworkCapabilities(it) } ?: return "Offline"
+        return when {
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "Mobile data"
+            else -> "Other"
+        }
     }
 
     private data class Owner(val pkg: String?, val label: String, val uid: Int)

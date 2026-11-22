@@ -23,8 +23,8 @@ unknown apps off the network, and encrypts every DNS lookup that is allowed thro
 
 | Platform | File | Notes |
 |---|---|---|
-| Windows 10 / 11 (x64) | [`ZeroLeakage-1.0.0-x64.msi`](https://github.com/shatheitguy/ZeroLeakage/releases/download/v1.0.0/ZeroLeakage-1.0.0-x64.msi) | Self-contained: .NET is bundled, nothing else to install. |
-| Android 10+ | [`ZeroLeakage-1.0.0-release.apk`](https://github.com/shatheitguy/ZeroLeakage/releases/download/v1.0.0/ZeroLeakage-1.0.0-release.apk) | Sideload: allow "Install unknown apps" for your browser or file manager. |
+| Windows 10 / 11 (x64) | [`ZeroLeakage-1.1.0-x64.msi`](https://github.com/shatheitguy/ZeroLeakage/releases/download/v1.1.0/ZeroLeakage-1.1.0-x64.msi) | Self-contained: .NET is bundled, nothing else to install. |
+| Android 10+ | [`ZeroLeakage-1.1.0-release.apk`](https://github.com/shatheitguy/ZeroLeakage/releases/download/v1.1.0/ZeroLeakage-1.1.0-release.apk) | Sideload: allow "Install unknown apps" for your browser or file manager. |
 
 ## Three protection modes
 
@@ -40,7 +40,8 @@ A dark-glass WPF desktop app with a frameless window, an animated mode switcher 
 
 - **Dashboard:** bento metrics (telemetry purged, DNS trackers dropped, firewall lockdown, DeepScan) and a live, filterable feed with one-click *Block domain* / *Kill app network*.
 - **Firewall rules:** per-app Wi-Fi / Ethernet / VPN access and global kill switches.
-- **DNS & telemetry:** blocklists, encrypted DNS-over-HTTPS resolvers, OS telemetry services and trace-log wiping.
+- **DNS & filters:** AdGuard-style filter lists (real downloads and rule counts), 10 DoH resolvers plus a custom endpoint, DNSSEC validation with a live domain checker, offline GeoIP, allow/block lists, OS telemetry services and trace-log wiping.
+- **Packet inspector:** *Inspect* on any feed row shows the matching filter rule plus a real DNS-over-HTTPS lookup of that domain: answers, TTLs, flags, DNSSEC result, Extended DNS Errors, the country of each IP and raw hex.
 - **DeepScan AV:** quick / full scans and a quarantine vault.
 - **Snapshots & settings:** restore points, start with Windows, tray behaviour.
 - **Ask to Connect:** a toast slides in when an unknown app tries to get online in Strict Guard.
@@ -56,9 +57,13 @@ A real on-device DNS firewall built on Android's `VpnService`. Nothing is routed
 
 - **Local DNS-only VPN:** only the virtual DNS address is routed into the tunnel, so normal app traffic never passes through it and battery use stays low.
 - **Per-app attribution:** every lookup is matched to the app that made it (`getConnectionOwnerUid`).
-- **Blocklists:** OS/OEM telemetry, ad and tracker networks, analytics SDKs, and malware/phishing hosts, plus your own custom domains.
+- **Filter lists (AdGuard-style):** 4 built-in lists plus 25 subscribable ones, including AdGuard DNS filter (on by default), OISD, HaGeZi (Light/Multi/PRO, Threat Intelligence, native trackers for Xiaomi/Samsung/Huawei/TikTok…), StevenBlack, EasyPrivacy, AdAway, Peter Lowe, URLhaus, Phishing Army, NoCoin and parental lists. You can also add any list by URL. Supported formats: `||domain^`, `@@` exceptions, hosts files and plain domain lists. Lists auto-refresh every 3 days.
+- **Allowlist and blocklist:** your own domains override every list.
 - **Per-app firewall:** Wi-Fi and mobile-data kill switches for each app.
-- **Encrypted DNS:** allowed lookups are resolved over DNS-over-HTTPS (Cloudflare, Quad9 or Mullvad).
+- **Encrypted DNS:** allowed lookups are resolved over DNS-over-HTTPS: Cloudflare (standard, Security, Family), Quad9, Mullvad, AdGuard, AdGuard Family, Google, Control D, DNS.SB, or your own endpoint.
+- **DNSSEC:** on by default. The resolver validates each answer; a 🔒 in the feed marks validated answers, and failed validation is refused. An optional strict mode also blocks unsigned domains.
+- **Packet inspector:** tap a lookup, then *Details*, to see the app, UID, network, IP/UDP header fields, transaction ID, flags, EDNS, the filter rule that matched, the resolver, latency, cache status, DNSSEC result, every answer with its TTL and country, and a hex dump of the query and response.
+- **Offline GeoIP:** an opt-in download of the DB-IP Country Lite database (CC BY 4.0). Lookups run on the device.
 - **Strict Guard prompts:** an actionable notification (Allow / Allow once / Block) appears the first time an unapproved app reaches out.
 
 > Tip: set Android **Private DNS** to *Off* or *Automatic*. A custom Private DNS host bypasses the on-device filter.
@@ -88,7 +93,7 @@ docs/      project website (GitHub Pages)
 **Windows** (needs the .NET 10 SDK):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File windows\build-msi.ps1     # -> windows\artifacts\msi\ZeroLeakage-1.0.0-x64.msi
+powershell -ExecutionPolicy Bypass -File windows\build-msi.ps1     # -> windows\artifacts\msi\ZeroLeakage-1.1.0-x64.msi
 dotnet run --project windows\ZeroLeakage.UI                          # run the UI
 ```
 
@@ -96,7 +101,7 @@ dotnet run --project windows\ZeroLeakage.UI                          # run the U
 
 ```powershell
 cd android
-.\gradlew.bat assembleRelease      # -> app\build\outputs\apk\release\ZeroLeakage-1.0.0-release.apk
+.\gradlew.bat assembleRelease      # -> app\build\outputs\apk\release\ZeroLeakage-1.1.0-release.apk
 .\gradlew.bat testDebugUnitTest
 ```
 
@@ -112,4 +117,6 @@ powershell -ExecutionPolicy Bypass -File windows\tools\New-InstallerArt.ps1 -Out
 ## Privacy
 
 ZeroLeakage has no account, no analytics and no servers of its own. Rules, counters and the live feed stay on your device.
-The only traffic it creates is the encrypted DNS-over-HTTPS request to the resolver you choose.
+The only traffic it creates is the encrypted DNS-over-HTTPS request to the resolver you choose, filter-list downloads from the list publishers you enable, and the GeoIP database download if you ask for it.
+
+IP geolocation by [DB-IP.com](https://db-ip.com) (CC BY 4.0). Filter lists belong to their respective authors and keep their own licenses.

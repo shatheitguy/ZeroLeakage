@@ -48,6 +48,9 @@ import app.zeroleakage.mobile.ShieldController
 import app.zeroleakage.mobile.data.FeedEvent
 import app.zeroleakage.mobile.data.Verdict
 import app.zeroleakage.mobile.data.ZeroLeakage
+import app.zeroleakage.mobile.filters.Filters
+import app.zeroleakage.mobile.geo.GeoIp
+import app.zeroleakage.mobile.vpn.DnssecStatus
 import app.zeroleakage.mobile.ui.components.Badge
 import app.zeroleakage.mobile.ui.components.Chip
 import app.zeroleakage.mobile.ui.components.GlassCard
@@ -77,6 +80,8 @@ fun DashboardScreen(shield: ShieldController) {
     var filter by rememberSaveable { mutableStateOf(FeedFilter.ALL) }
     var query by rememberSaveable { mutableStateOf("") }
     var expanded by remember { mutableStateOf<Long?>(null) }
+    var inspecting by remember { mutableStateOf<FeedEvent?>(null) }
+    inspecting?.let { PacketInspector(it) { inspecting = null } }
 
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(running) {
@@ -144,7 +149,8 @@ fun DashboardScreen(shield: ShieldController) {
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     MetricTile("App firewall", formatCount(stats.appBlocks), "drops", "Rules", "${rules.size}", accent, Modifier.weight(1f))
-                    MetricTile("Clean lookups", formatCount(stats.allowed), "ok", "Resolver", ZeroLeakage.resolver().name, Zl.Mint, Modifier.weight(1f))
+                    MetricTile("Clean lookups", formatCount(stats.allowed), "ok", "DNSSEC signed",
+                        if (stats.dnssecChecked > 0) "${stats.dnssecPercent}%" else "—", Zl.Mint, Modifier.weight(1f))
                 }
             }
         }
@@ -180,7 +186,7 @@ fun DashboardScreen(shield: ShieldController) {
         }
 
         items(visible, key = { it.id }) { e ->
-            FeedRow(e, expanded == e.id) { expanded = if (expanded == e.id) null else e.id }
+            FeedRow(e, expanded == e.id, onInspect = { inspecting = e }) { expanded = if (expanded == e.id) null else e.id }
         }
     }
 }
@@ -188,8 +194,10 @@ fun DashboardScreen(shield: ShieldController) {
 private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.US)
 
 @Composable
-private fun FeedRow(e: FeedEvent, isExpanded: Boolean, onClick: () -> Unit) {
+private fun FeedRow(e: FeedEvent, isExpanded: Boolean, onInspect: () -> Unit, onClick: () -> Unit) {
     val color = verdictColor(e.verdict)
+    val firstIp = e.detail?.answers?.firstOrNull { it.address != null }
+    val geo = firstIp?.address?.let { GeoIp.lookup(it) }
     Column(
         Modifier
             .fillMaxWidth()
@@ -209,12 +217,23 @@ private fun FeedRow(e: FeedEvent, isExpanded: Boolean, onClick: () -> Unit) {
             Text(e.category, fontSize = 10.5.sp, color = Zl.TextSecondary, maxLines = 1)
         }
         Spacer(Modifier.height(3.dp))
-        Text("→ ${e.domain}", style = Zl.mono.copy(fontSize = 11.5.sp, color = Zl.TextSecondary), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("→ ${e.domain}", style = Zl.mono.copy(fontSize = 11.5.sp, color = Zl.TextSecondary), maxLines = 1,
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            e.detail?.let { d ->
+                if (d.dnssec == DnssecStatus.SECURE) Text(" 🔒", fontSize = 10.sp)
+                if (firstIp != null) {
+                    Text(" ${geo?.flag ?: ""} ${firstIp.data}", style = Zl.mono.copy(fontSize = 10.sp, color = Zl.TextMuted), maxLines = 1)
+                }
+            }
+        }
         AnimatedVisibility(isExpanded) {
             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SmallAction("Block domain", Zl.TextSecondary) { ZeroLeakage.addCustomDomain(e.domain) }
+                SmallAction("Details", Zl.Violet, onInspect)
+                if (e.verdict == Verdict.ALLOWED) SmallAction("Block", Zl.TextSecondary) { Filters.block(e.domain) }
+                else SmallAction("Allow", Zl.Mint) { Filters.allow(e.domain) }
                 if (e.packageName != null) {
-                    SmallAction("Kill app network", Zl.Crimson) {
+                    SmallAction("Kill app", Zl.Crimson) {
                         ZeroLeakage.updateRule(e.packageName) { it.copy(wifi = false, mobile = false, approved = false) }
                     }
                 }

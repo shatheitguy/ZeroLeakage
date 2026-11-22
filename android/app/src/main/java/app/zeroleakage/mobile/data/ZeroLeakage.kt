@@ -6,6 +6,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import app.zeroleakage.mobile.filters.Filters
+import app.zeroleakage.mobile.geo.GeoIp
+import app.zeroleakage.mobile.vpn.DnssecStatus
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
@@ -17,18 +20,19 @@ import java.util.concurrent.atomic.AtomicLong
  */
 object ZeroLeakage {
 
-    val BLOCKLISTS = listOf(
-        Blocklist("telemetry", "OS & OEM Telemetry", "Google, Samsung, Xiaomi, Huawei & Meta phone-home endpoints.", "blocklist_telemetry.txt", "Telemetry"),
-        Blocklist("trackers", "Ad & Tracker Mesh", "Ad networks, attribution SDKs, pixels and fingerprinting.", "blocklist_trackers.txt", "Ad Tracker"),
-        Blocklist("analytics", "App Analytics SDKs", "Crash reporters and product analytics: Sentry, Mixpanel, Amplitude…", "blocklist_analytics.txt", "Analytics"),
-        Blocklist("malware", "Malware & Phishing", "Known stalkerware, cryptojacking and phishing hosts.", "blocklist_malware.txt", "Malware"),
-    )
-
     val RESOLVERS = listOf(
-        Resolver("cloudflare", "Cloudflare", "https://1.1.1.1/dns-query", "No-log · fastest anycast"),
-        Resolver("quad9", "Quad9", "https://dns.quad9.net/dns-query", "Malware filtering · Swiss"),
-        Resolver("mullvad", "Mullvad", "https://dns.mullvad.net/dns-query", "No-log · ad-blocking"),
+        Resolver("cloudflare", "Cloudflare", "https://1.1.1.1/dns-query", "No-log · fastest anycast · DNSSEC", "Privacy"),
+        Resolver("quad9", "Quad9", "https://dns.quad9.net/dns-query", "Malware filtering · Swiss · DNSSEC", "Security"),
+        Resolver("mullvad", "Mullvad", "https://dns.mullvad.net/dns-query", "No-log · Swedish · DNSSEC", "Privacy"),
+        Resolver("adguard", "AdGuard DNS", "https://dns.adguard-dns.com/dns-query", "Blocks ads & trackers upstream too", "Filtering"),
+        Resolver("adguard_family", "AdGuard Family", "https://family.adguard-dns.com/dns-query", "Ads + adult content + safe search", "Filtering"),
+        Resolver("cf_security", "Cloudflare Security", "https://security.cloudflare-dns.com/dns-query", "1.1.1.2 · blocks malware", "Security"),
+        Resolver("cf_family", "Cloudflare Family", "https://family.cloudflare-dns.com/dns-query", "1.1.1.3 · malware + adult", "Filtering"),
+        Resolver("google", "Google Public DNS", "https://dns.google/dns-query", "Fast & reliable · logs kept 24–48 h", "Mainstream"),
+        Resolver("controld", "Control D (free)", "https://freedns.controld.com/p0", "Unfiltered · no-log · Canada", "Privacy"),
+        Resolver("dnssb", "DNS.SB", "https://doh.dns.sb/dns-query", "No-log · Germany", "Privacy"),
     )
+    const val CUSTOM_RESOLVER = "custom"
 
     private const val FEED_LIMIT = 300
     private lateinit var prefs: SharedPreferences
@@ -51,14 +55,19 @@ object ZeroLeakage {
     private val _rules = MutableStateFlow<Map<String, AppRule>>(emptyMap())
     val rules: StateFlow<Map<String, AppRule>> = _rules.asStateFlow()
 
-    private val _enabledLists = MutableStateFlow(setOf("telemetry", "trackers", "analytics", "malware"))
-    val enabledLists: StateFlow<Set<String>> = _enabledLists.asStateFlow()
-
-    private val _customDomains = MutableStateFlow<Set<String>>(emptySet())
-    val customDomains: StateFlow<Set<String>> = _customDomains.asStateFlow()
-
     private val _resolverId = MutableStateFlow(RESOLVERS.first().id)
     val resolverId: StateFlow<String> = _resolverId.asStateFlow()
+
+    private val _customResolverUrl = MutableStateFlow("")
+    val customResolverUrl: StateFlow<String> = _customResolverUrl.asStateFlow()
+
+    /** Ask the resolver to validate DNSSEC and report it (AD bit). */
+    private val _dnssec = MutableStateFlow(true)
+    val dnssec: StateFlow<Boolean> = _dnssec.asStateFlow()
+
+    /** Paranoid: refuse answers for domains that aren't DNSSEC-signed. Breaks much of the web. */
+    private val _dnssecStrict = MutableStateFlow(false)
+    val dnssecStrict: StateFlow<Boolean> = _dnssecStrict.asStateFlow()
 
     private val _startOnBoot = MutableStateFlow(false)
     val startOnBoot: StateFlow<Boolean> = _startOnBoot.asStateFlow()
@@ -71,14 +80,13 @@ object ZeroLeakage {
     /** Packages with an "Ask to connect" notification already showing. */
     val pendingPrompts: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
-    private val domainSets = ConcurrentHashMap<String, Set<String>>()
-
     fun init(context: Context) {
         prefs = context.getSharedPreferences("zeroleakage", Context.MODE_PRIVATE)
         _mode.value = runCatching { ProtectionMode.valueOf(prefs.getString("mode", null) ?: "") }.getOrDefault(ProtectionMode.BALANCED)
-        _enabledLists.value = prefs.getStringSet("lists", null)?.toSet() ?: _enabledLists.value
-        _customDomains.value = prefs.getStringSet("custom", null)?.toSet() ?: emptySet()
         _resolverId.value = prefs.getString("resolver", null) ?: RESOLVERS.first().id
+        _customResolverUrl.value = prefs.getString("custom_doh", "") ?: ""
+        _dnssec.value = prefs.getBoolean("dnssec", true)
+        _dnssecStrict.value = prefs.getBoolean("dnssec_strict", false)
         _startOnBoot.value = prefs.getBoolean("boot", false)
         _onboarded.value = prefs.getBoolean("onboarded", false)
         _rules.value = decodeRules(prefs.getString("rules", null))
@@ -88,9 +96,12 @@ object ZeroLeakage {
             appBlocks = prefs.getLong("s_app", 0),
             allowed = prefs.getLong("s_ok", 0),
             totalQueries = prefs.getLong("s_all", 0),
+            dnssecChecked = prefs.getLong("s_dsc", 0),
+            dnssecSecure = prefs.getLong("s_dss", 0),
+            dnssecFailed = prefs.getLong("s_dsf", 0),
         )
-        // Load blocklists off the main thread.
-        Thread { BLOCKLISTS.forEach { loadList(context, it) } }.start()
+        Filters.init(context, prefs)
+        GeoIp.init(context)
     }
 
     // ───────────────────────── settings ─────────────────────────
@@ -106,29 +117,39 @@ object ZeroLeakage {
         if (!running) allowedOnce.clear()
     }
 
-    fun setListEnabled(id: String, enabled: Boolean) {
-        _enabledLists.update { if (enabled) it + id else it - id }
-        prefs.edit().putStringSet("lists", _enabledLists.value).apply()
-    }
-
-    fun addCustomDomain(raw: String): String? {
-        val d = normalizeDomain(raw) ?: return null
-        _customDomains.update { it + d }
-        prefs.edit().putStringSet("custom", _customDomains.value).apply()
-        return d
-    }
-
-    fun removeCustomDomain(domain: String) {
-        _customDomains.update { it - domain }
-        prefs.edit().putStringSet("custom", _customDomains.value).apply()
-    }
-
     fun setResolver(id: String) {
         _resolverId.value = id
         prefs.edit().putString("resolver", id).apply()
     }
 
-    fun resolver(): Resolver = RESOLVERS.firstOrNull { it.id == _resolverId.value } ?: RESOLVERS.first()
+    fun resolver(): Resolver {
+        if (_resolverId.value == CUSTOM_RESOLVER && _customResolverUrl.value.startsWith("https://")) {
+            return Resolver(CUSTOM_RESOLVER, "Custom DoH", _customResolverUrl.value, _customResolverUrl.value, "Custom")
+        }
+        return RESOLVERS.firstOrNull { it.id == _resolverId.value } ?: RESOLVERS.first()
+    }
+
+    /** Saves and selects a custom DoH endpoint. Returns an error, or null on success. */
+    fun setCustomResolver(raw: String): String? {
+        val url = raw.trim()
+        if (!url.startsWith("https://")) return "DoH endpoints must start with https://"
+        if (runCatching { java.net.URL(url) }.isFailure) return "That URL isn't valid"
+        _customResolverUrl.value = url
+        prefs.edit().putString("custom_doh", url).apply()
+        setResolver(CUSTOM_RESOLVER)
+        return null
+    }
+
+    fun setDnssec(on: Boolean) {
+        _dnssec.value = on
+        if (!on) setDnssecStrict(false)
+        prefs.edit().putBoolean("dnssec", on).apply()
+    }
+
+    fun setDnssecStrict(on: Boolean) {
+        _dnssecStrict.value = on
+        prefs.edit().putBoolean("dnssec_strict", on).apply()
+    }
 
     fun setStartOnBoot(value: Boolean) {
         _startOnBoot.value = value
@@ -143,12 +164,13 @@ object ZeroLeakage {
     fun restoreDefaults() {
         setMode(ProtectionMode.BALANCED)
         _rules.value = emptyMap()
-        _customDomains.value = emptySet()
-        _enabledLists.value = BLOCKLISTS.map { it.id }.toSet()
         _resolverId.value = RESOLVERS.first().id
+        _dnssec.value = true
+        _dnssecStrict.value = false
         allowedOnce.clear()
+        Filters.restoreDefaults()
         prefs.edit()
-            .remove("rules").remove("custom").remove("lists").remove("resolver")
+            .remove("rules").remove("resolver").remove("dnssec").remove("dnssec_strict")
             .apply()
     }
 
@@ -186,62 +208,29 @@ object ZeroLeakage {
         }.getOrDefault(emptyMap())
     }
 
-    // ───────────────────────── blocklists ─────────────────────────
-    private fun loadList(context: Context, list: Blocklist) {
-        val set = HashSet<String>()
-        runCatching {
-            context.assets.open(list.asset).bufferedReader().useLines { lines ->
-                lines.map { it.substringBefore('#').trim().lowercase() }
-                    .filter { it.isNotEmpty() }
-                    .forEach { set.add(it.removePrefix("0.0.0.0 ").removePrefix("127.0.0.1 ").trim()) }
-            }
-        }
-        domainSets[list.id] = set
-    }
-
-    fun listSize(id: String): Int = domainSets[id]?.size ?: 0
-
-    /** Returns the category of the first matching list (domain or any parent domain), or null. */
-    fun matchBlocklist(domain: String): String? {
-        if (matchesSet(domain, _customDomains.value)) return "User Blocklist"
-        val enabled = _enabledLists.value
-        for (list in BLOCKLISTS) {
-            if (list.id !in enabled) continue
-            val set = domainSets[list.id] ?: continue
-            if (matchesSet(domain, set)) return list.category
-        }
-        return null
-    }
-
-    private fun matchesSet(domain: String, set: Set<String>): Boolean {
-        if (set.isEmpty()) return false
-        var d = domain
-        while (true) {
-            if (d in set) return true
-            val dot = d.indexOf('.')
-            if (dot < 0 || dot == d.length - 1) return false
-            d = d.substring(dot + 1)
-            if (!d.contains('.')) return false   // never match a bare TLD
-        }
-    }
-
-    fun normalizeDomain(raw: String): String? {
-        var d = raw.trim().lowercase().removePrefix("http://").removePrefix("https://")
-        d = d.substringBefore('/').substringBefore(':').trimEnd('.')
-        return if (d.length > 3 && d.contains('.') && d.none { it.isWhitespace() }) d else null
-    }
-
     // ───────────────────────── live data from the VPN ─────────────────────────
-    fun record(verdict: Verdict, appLabel: String, pkg: String?, domain: String, category: String) {
-        val event = FeedEvent(feedIds.incrementAndGet(), System.currentTimeMillis(), verdict, appLabel, pkg, domain, category)
+    /**
+     * @param byFilter true when a filter list (or your blocklist) made the decision, so it counts as a
+     *                 tracker/telemetry drop rather than an app-firewall drop.
+     */
+    fun record(verdict: Verdict, appLabel: String, pkg: String?, domain: String, category: String,
+               byFilter: Boolean = false, detail: PacketDetail? = null) {
+        val event = FeedEvent(feedIds.incrementAndGet(), System.currentTimeMillis(), verdict, appLabel, pkg, domain, category, detail)
         _feed.update { (listOf(event) + it).take(FEED_LIMIT) }
-        _stats.update { s ->
+        _stats.update { s0 ->
+            val s = s0.copy(totalQueries = s0.totalQueries + 1).let { d ->
+                if (detail == null || !detail.dnssecRequested || detail.dnssec == DnssecStatus.NOT_CHECKED) d
+                else d.copy(
+                    dnssecChecked = d.dnssecChecked + 1,
+                    dnssecSecure = d.dnssecSecure + if (detail.dnssec == DnssecStatus.SECURE) 1 else 0,
+                    dnssecFailed = d.dnssecFailed + if (detail.dnssec == DnssecStatus.BOGUS) 1 else 0,
+                )
+            }
             when {
-                verdict == Verdict.ALLOWED -> s.copy(allowed = s.allowed + 1, totalQueries = s.totalQueries + 1)
-                category == "Telemetry" -> s.copy(telemetryBlocked = s.telemetryBlocked + 1, totalQueries = s.totalQueries + 1)
-                category in setOf("Ad Tracker", "Analytics", "Malware", "User Blocklist") ->
-                    s.copy(trackersBlocked = s.trackersBlocked + 1, totalQueries = s.totalQueries + 1)
-                else -> s.copy(appBlocks = s.appBlocks + 1, totalQueries = s.totalQueries + 1)
+                verdict == Verdict.ALLOWED -> s.copy(allowed = s.allowed + 1)
+                byFilter && category == "Telemetry" -> s.copy(telemetryBlocked = s.telemetryBlocked + 1)
+                byFilter -> s.copy(trackersBlocked = s.trackersBlocked + 1)
+                else -> s.copy(appBlocks = s.appBlocks + 1)
             }
         }
         if (verdict != Verdict.ALLOWED && pkg != null) {
@@ -260,7 +249,8 @@ object ZeroLeakage {
     fun persistStats() {
         val s = _stats.value
         prefs.edit().putLong("s_tel", s.telemetryBlocked).putLong("s_trk", s.trackersBlocked)
-            .putLong("s_app", s.appBlocks).putLong("s_ok", s.allowed).putLong("s_all", s.totalQueries).apply()
+            .putLong("s_app", s.appBlocks).putLong("s_ok", s.allowed).putLong("s_all", s.totalQueries)
+            .putLong("s_dsc", s.dnssecChecked).putLong("s_dss", s.dnssecSecure).putLong("s_dsf", s.dnssecFailed).apply()
         prefs.edit().putString("rules", encodeRules(_rules.value)).apply()
     }
 }

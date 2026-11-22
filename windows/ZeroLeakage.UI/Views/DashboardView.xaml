@@ -34,10 +34,14 @@
 
                 <Border Grid.Column="4" Margin="10,0,0,0" CornerRadius="6" Padding="8,2" VerticalAlignment="Center"
                         Background="#FF141824" BorderBrush="{StaticResource Brush.Border}" BorderThickness="1">
-                    <TextBlock FontSize="11" Foreground="{StaticResource Brush.TextSecondary}" Text="{Binding Category}" />
+                    <TextBlock FontSize="11" Foreground="{StaticResource Brush.TextSecondary}" Text="{Binding Category}"
+                               ToolTip="{Binding RuleText}" ToolTipService.IsEnabled="{Binding HasRule}" />
                 </Border>
 
                 <StackPanel x:Name="Actions" Grid.Column="5" Orientation="Horizontal" Margin="10,0,0,0" Visibility="Hidden">
+                    <Button Style="{StaticResource Button.Chip}" Content="Inspect" Margin="0,0,6,0" ToolTip="Packet details, live DNS lookup, DNSSEC and country"
+                            Command="{Binding DataContext.InspectCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                            CommandParameter="{Binding}" />
                     <Button Style="{StaticResource Button.Chip}" Content="Block Domain" Margin="0,0,6,0"
                             Command="{Binding DataContext.BlockDomainCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
                             CommandParameter="{Binding}" />

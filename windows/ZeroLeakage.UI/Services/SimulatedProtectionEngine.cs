@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using ZeroLeakage.UI.Models;
+using ZeroLeakage.UI.Services.Dns;
 
 namespace ZeroLeakage.UI.Services;
 
@@ -63,7 +64,7 @@ public sealed class SimulatedProtectionEngine : IProtectionEngine
     private readonly HashSet<string> _approvedApps = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<NetworkScope, bool> _globalScopes = new() { [NetworkScope.WiFi] = true, [NetworkScope.Lan] = true, [NetworkScope.Wan] = true };
     private readonly List<AppRule> _apps;
-    private readonly List<BlocklistSource> _blocklists;
+    private readonly FilterListService _filters;
     private readonly List<DohResolver> _resolvers;
     private readonly List<QuarantineItem> _quarantine;
     private readonly List<SystemSnapshot> _snapshots;
@@ -81,13 +82,15 @@ public sealed class SimulatedProtectionEngine : IProtectionEngine
     private double _eps;
     private bool _promptPending;
     private DohResolver _resolver;
+    private bool _dnssec = true, _dnssecStrict;
 
     public event EventHandler<FeedEvent>? FeedEventRaised;
     public event EventHandler<EngineStats>? StatsUpdated;
     public event EventHandler<ConnectionRequest>? ConnectionRequested;
 
-    public SimulatedProtectionEngine()
+    public SimulatedProtectionEngine(FilterListService filters)
     {
+        _filters = filters;
         _apps = new List<AppRule>
         {
             App("brave.exe", @"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe", "Brave Software, Inc.", 12),
@@ -105,21 +108,18 @@ public sealed class SimulatedProtectionEngine : IProtectionEngine
         foreach (var a in _apps.Where(a => a.WanAllowed)) _approvedApps.Add(a.Name);
         _approvedApps.Add("ZeroLeakage.Core.exe");
 
-        _blocklists = new List<BlocklistSource>
-        {
-            new() { Name = "Windows Telemetry Core", Description = "DiagTrack, Watson, CEIP and settings-win endpoints.", EntryCount = 412, IsEnabled = true },
-            new() { Name = "Ad & Tracker Mesh", Description = "Cross-site ad networks, pixels and fingerprinting scripts.", EntryCount = 148_906, IsEnabled = true },
-            new() { Name = "App Analytics SDKs", Description = "Sentry, Mixpanel, Segment, Amplitude, Firebase Analytics.", EntryCount = 2_311, IsEnabled = true },
-            new() { Name = "Malware & Phishing", Description = "Known C2, cryptojacking and phishing domains.", EntryCount = 96_540, IsEnabled = true },
-            new() { Name = "Bing & Widgets Feed", Description = "Start-menu web search, MSN widgets and news feed.", EntryCount = 186, IsEnabled = false },
-            new() { Name = "Smart-TV & IoT Phone-Home", Description = "Samsung, LG, Roku, Alexa telemetry beacons.", EntryCount = 1_042, IsEnabled = false },
-        };
-
         _resolvers = new List<DohResolver>
         {
-            new("Cloudflare", "https://1.1.1.1/dns-query", "No-log · fastest anycast"),
-            new("Quad9", "https://9.9.9.9/dns-query", "Malware filtering · Swiss jurisdiction"),
-            new("Mullvad", "https://dns.mullvad.net/dns-query", "No-log · ad-blocking"),
+            new("Cloudflare", "https://1.1.1.1/dns-query", "No-log · fastest anycast · DNSSEC", "Privacy"),
+            new("Quad9", "https://dns.quad9.net/dns-query", "Malware filtering · Swiss · DNSSEC", "Security"),
+            new("Mullvad", "https://dns.mullvad.net/dns-query", "No-log · Swedish · DNSSEC", "Privacy"),
+            new("AdGuard DNS", "https://dns.adguard-dns.com/dns-query", "Blocks ads & trackers upstream too", "Filtering"),
+            new("AdGuard Family", "https://family.adguard-dns.com/dns-query", "Ads + adult content + safe search", "Filtering"),
+            new("Cloudflare Security", "https://security.cloudflare-dns.com/dns-query", "1.1.1.2 · blocks malware", "Security"),
+            new("Cloudflare Family", "https://family.cloudflare-dns.com/dns-query", "1.1.1.3 · malware + adult", "Filtering"),
+            new("Google Public DNS", "https://dns.google/dns-query", "Fast & reliable · logs kept 24–48 h", "Mainstream"),
+            new("Control D (free)", "https://freedns.controld.com/p0", "Unfiltered · no-log · Canada", "Privacy"),
+            new("DNS.SB", "https://doh.dns.sb/dns-query", "No-log · Germany", "Privacy"),
         };
         _resolver = _resolvers[0];
 
@@ -185,9 +185,19 @@ public sealed class SimulatedProtectionEngine : IProtectionEngine
 
         var app = _apps.FirstOrDefault(a => a.Name.Equals(t.Process, StringComparison.OrdinalIgnoreCase));
 
-        if (_blockedDomains.Contains(t.Destination)) { _dnsBlocked++; return Blocked("User Blocklist"); }
+        // Real filter lists decide first (your allowlist > your blocklist > @@ exceptions > list rules).
+        var match = _filters.Match(t.Destination);
+        if (match is { Blocked: true })
+        {
+            if (match.Category.Contains("Telemetry")) { _telemetryBlocked++; Bump(app); } else _dnsBlocked++;
+            return Blocked(match.Category) with { Match = match };
+        }
+        bool allowlisted = match is { Blocked: false };
+
         if (_killedApps.Contains(t.Process) || app is { IsFullyKilled: true }) { _exeBlocked++; Bump(app); return Blocked("App Network Killed"); }
         if (!_globalScopes[NetworkScope.Wan] && t.Kind != Kind.Doh) { _exeBlocked++; return Blocked("WAN Kill-Switch"); }
+
+        if (allowlisted && t.Kind is Kind.Telemetry or Kind.Tracker) return Allowed("Allowlisted") with { Match = match };
 
         switch (t.Kind)
         {
@@ -235,7 +245,7 @@ public sealed class SimulatedProtectionEngine : IProtectionEngine
             }
             _latency = Math.Clamp(_latency + _rng.Next(-2, 3), 8, 26);
             if (_updateWindowEnds is { } end && DateTime.Now >= end) _updateWindowEnds = null;
-            s = new EngineStats(_telemetryBlocked, _etlMb, _dnsBlocked, _latency, _rules, _exeBlocked, _realtime,
+            s = new EngineStats(_telemetryBlocked, _etlMb, _dnsBlocked, _latency, _rules + _filters.TotalRules, _exeBlocked, _realtime,
                 _lastScan, _quarantine.Count, _eps, _updateWindowEnds);
         }
         StatsUpdated?.Invoke(this, s);
@@ -300,8 +310,9 @@ public sealed class SimulatedProtectionEngine : IProtectionEngine
         return Task.CompletedTask;
     }
 
-    public Task BlockDomainAsync(string domain) { lock (_gate) { if (_blockedDomains.Add(domain)) _rules++; } return Task.CompletedTask; }
-    public Task UnblockDomainAsync(string domain) { lock (_gate) { if (_blockedDomains.Remove(domain)) _rules--; } return Task.CompletedTask; }
+    // Your own block/allow domains live in the shared filter service (called on the UI thread).
+    public Task BlockDomainAsync(string domain) { _filters.Block(domain); return Task.CompletedTask; }
+    public Task UnblockDomainAsync(string domain) { _filters.RemoveBlock(domain); return Task.CompletedTask; }
 
     public Task KillAppNetworkAsync(string processName)
     {
@@ -345,12 +356,15 @@ public sealed class SimulatedProtectionEngine : IProtectionEngine
             _killedApps.Clear();
             _updateWindowEnds = null;
             _rules = 214;
+            _dnssec = true;
+            _dnssecStrict = false;
             foreach (var k in _globalScopes.Keys.ToList()) _globalScopes[k] = true;
         }
+        await _filters.RestoreDefaultsAsync();
     }
 
     public IReadOnlyList<AppRule> GetAppRules() { lock (_gate) return _apps.ToList(); }
-    public IReadOnlyList<BlocklistSource> GetBlocklists() => _blocklists;
+    public IReadOnlyList<BlocklistSource> GetBlocklists() => _filters.Lists;
     public IReadOnlyList<DohResolver> GetResolvers() => _resolvers;
 
     public IReadOnlyList<TelemetryServiceStatus> GetTelemetryServices() => new[]
@@ -362,8 +376,12 @@ public sealed class SimulatedProtectionEngine : IProtectionEngine
         new TelemetryServiceStatus("WdiSystemHost", "Diagnostic System Host", false),
     };
 
-    public Task SetBlocklistEnabledAsync(BlocklistSource list, bool enabled) => Task.CompletedTask;
+    public Task SetBlocklistEnabledAsync(BlocklistSource list, bool enabled) => _filters.SetEnabledAsync(list, enabled);
     public Task SetResolverAsync(DohResolver resolver) { lock (_gate) _resolver = resolver; return Task.CompletedTask; }
+    public DohResolver CurrentResolver { get { lock (_gate) return _resolver; } }
+    public bool DnssecEnabled { get { lock (_gate) return _dnssec; } }
+    public bool DnssecStrict { get { lock (_gate) return _dnssecStrict; } }
+    public Task SetDnssecAsync(bool enabled, bool strict) { lock (_gate) { _dnssec = enabled; _dnssecStrict = enabled && strict; } return Task.CompletedTask; }
 
     public async Task<double> WipeTraceLogsAsync(IProgress<double>? progress, CancellationToken ct = default)
     {

@@ -1,204 +1,405 @@
 <UserControl x:Class="ZeroLeakage.UI.Views.DnsTelemetryView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:m="clr-namespace:ZeroLeakage.UI.Models">
+             xmlns:m="clr-namespace:ZeroLeakage.UI.Models"
+             xmlns:vm="clr-namespace:ZeroLeakage.UI.ViewModels">
+    <UserControl.Resources>
+        <Style x:Key="SectionTitle" TargetType="TextBlock" BasedOn="{StaticResource Text.Overline}">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}" />
+        </Style>
+
+        <!-- one filter-list row -->
+        <DataTemplate x:Key="FilterRow" DataType="{x:Type m:BlocklistSource}">
+            <Border x:Name="Row" Style="{StaticResource Card.Inset}" Margin="0,0,0,8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock FontSize="13" FontWeight="SemiBold" Text="{Binding Name}" />
+                            <Border Margin="8,0,0,0" Style="{StaticResource Badge}" Background="{StaticResource Brush.MintSoft}" BorderBrush="{StaticResource Brush.MintLine}"
+                                    Visibility="{Binding DefaultOn, Converter={StaticResource BoolToVisible}}">
+                                <TextBlock Style="{StaticResource Badge.Text}" Foreground="{StaticResource Brush.Mint}" Text="DEFAULT" />
+                            </Border>
+                        </StackPanel>
+                        <TextBlock Margin="0,2,0,0" Style="{StaticResource Text.Caption}" Text="{Binding Description}" TextWrapping="Wrap" />
+                        <Grid Margin="0,6,0,0">
+                            <TextBlock x:Name="Status" Style="{StaticResource Text.Mono}" FontSize="10.5" Foreground="{StaticResource Brush.TextSecondary}"
+                                       Text="{Binding StatusText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                            <Button Style="{StaticResource Button.Chip}" Content="Update" Margin="0,0,6,0"
+                                    Visibility="{Binding CanUpdate, Converter={StaticResource BoolToVisible}}"
+                                    Command="{Binding DataContext.UpdateListCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
+                            <Button Style="{StaticResource Button.Chip}" Content="Website" Margin="0,0,6,0"
+                                    Visibility="{Binding HasHomepage, Converter={StaticResource BoolToVisible}}"
+                                    Command="{Binding DataContext.OpenHomepageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
+                            <Button Style="{StaticResource Button.Chip.Danger}" Content="Remove"
+                                    Visibility="{Binding IsCustom, Converter={StaticResource BoolToVisible}}"
+                                    Command="{Binding DataContext.RemoveListCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <ToggleButton Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Top" Style="{StaticResource Toggle.Switch}"
+                                  Background="{StaticResource Brush.Violet}" IsChecked="{Binding IsEnabled}" />
+                </Grid>
+            </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsEnabled}" Value="True">
+                    <Setter TargetName="Row" Property="BorderBrush" Value="{StaticResource Brush.VioletLine}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding HasError}" Value="True">
+                    <Setter TargetName="Status" Property="Foreground" Value="{StaticResource Brush.Amber}" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <!-- domain chips in allow / block lists -->
+        <DataTemplate x:Key="AllowRow">
+            <Border CornerRadius="8" Padding="10,6" Margin="0,0,0,4" Background="{StaticResource Brush.Inset}">
+                <Grid>
+                    <TextBlock Style="{StaticResource Text.Mono}" Text="{Binding}" VerticalAlignment="Center" />
+                    <Button HorizontalAlignment="Right" Style="{StaticResource Button.Chip}" Content="Remove"
+                            Command="{Binding DataContext.RemoveAllowCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
+                </Grid>
+            </Border>
+        </DataTemplate>
+        <DataTemplate x:Key="BlockRow">
+            <Border CornerRadius="8" Padding="10,6" Margin="0,0,0,4" Background="{StaticResource Brush.Inset}">
+                <Grid>
+                    <TextBlock Style="{StaticResource Text.Mono}" Text="{Binding}" VerticalAlignment="Center" />
+                    <Button HorizontalAlignment="Right" Style="{StaticResource Button.Chip}" Content="Remove"
+                            Command="{Binding DataContext.RemoveDomainCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
+                </Grid>
+            </Border>
+        </DataTemplate>
+    </UserControl.Resources>
+
     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
         <Grid Margin="8,10,16,22">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="16" />
+                <RowDefinition Height="14" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="14" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <StackPanel>
-                <TextBlock Style="{StaticResource Text.Title}" Text="DNS &amp; Telemetry" />
-                <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Body}"
-                           Text="Every lookup is encrypted with DNS-over-HTTPS and checked against your blocklists. Windows diagnostic traces are wiped on demand." />
+                <TextBlock Style="{StaticResource Text.Title}" Text="DNS, Filters &amp; Telemetry" />
+                <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Body}" TextWrapping="Wrap"
+                           Text="AdGuard-style filter lists, encrypted DNS-over-HTTPS with DNSSEC, offline GeoIP and Windows telemetry controls." />
             </StackPanel>
 
-            <Grid Grid.Row="2">
+            <StackPanel Grid.Row="2" Orientation="Horizontal">
+                <RadioButton Style="{StaticResource Radio.Chip}" GroupName="DnsTab" Content="Filter lists"
+                             IsChecked="{Binding Tab, Converter={StaticResource EnumEquals}, ConverterParameter=0}" />
+                <RadioButton Style="{StaticResource Radio.Chip}" GroupName="DnsTab" Content="Resolver &amp; DNSSEC"
+                             IsChecked="{Binding Tab, Converter={StaticResource EnumEquals}, ConverterParameter=1}" />
+                <RadioButton Style="{StaticResource Radio.Chip}" GroupName="DnsTab" Content="My rules"
+                             IsChecked="{Binding Tab, Converter={StaticResource EnumEquals}, ConverterParameter=2}" />
+                <RadioButton Style="{StaticResource Radio.Chip}" GroupName="DnsTab" Content="Windows telemetry"
+                             IsChecked="{Binding Tab, Converter={StaticResource EnumEquals}, ConverterParameter=3}" />
+            </StackPanel>
+
+            <!-- ═════════════ TAB 0: filter lists ═════════════ -->
+            <Grid Grid.Row="4" Visibility="{Binding Tab, Converter={StaticResource EqualsToVisible}, ConverterParameter=0}">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="1.15*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="14" />
+                    <ColumnDefinition Width="300" />
+                </Grid.ColumnDefinitions>
+
+                <ItemsControl ItemsSource="{Binding Groups}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:FilterGroupViewModel}">
+                            <Border Style="{StaticResource Card}" Margin="0,0,0,14">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,12">
+                                        <TextBlock Style="{StaticResource SectionTitle}" Text="{Binding Name}" />
+                                        <TextBlock HorizontalAlignment="Right" Style="{StaticResource Text.Mono}" FontSize="11"
+                                                   Foreground="{StaticResource Brush.TextMuted}" Text="{Binding CountText}" />
+                                    </Grid>
+                                    <ItemsControl ItemsSource="{Binding Lists}" ItemTemplate="{StaticResource FilterRow}" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <StackPanel Grid.Column="2">
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource SectionTitle}" Text="ACTIVE RULES" />
+                            <TextBlock Margin="0,8,0,0" Style="{StaticResource Text.Mono}" FontSize="15" FontWeight="SemiBold"
+                                       Foreground="{StaticResource Brush.Violet}" Text="{Binding ActiveEntriesText}" TextWrapping="Wrap" />
+                            <Button Margin="0,12,0,0" HorizontalAlignment="Left" Style="{StaticResource Button.Primary}" Content="Update all lists"
+                                    Command="{Binding UpdateAllCommand}" />
+                            <TextBlock Margin="0,12,0,0" Style="{StaticResource Text.Caption}" TextWrapping="Wrap"
+                                       Text="Supports AdGuard / AdBlock (||domain^, @@ exceptions), hosts and plain-domain lists. Enabled lists refresh every 3 days at launch. One all-in-one list is usually enough." />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}" Margin="0,14,0,0">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource SectionTitle}" Text="ADD A LIST BY URL" />
+                            <TextBox Margin="0,12,0,0" Style="{StaticResource TextBox.Input}" Tag="https://example.com/filter.txt"
+                                     Text="{Binding NewListUrl, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBox Margin="0,8,0,0" Style="{StaticResource TextBox.Input}" Tag="Name (optional)"
+                                     Text="{Binding NewListName, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button Margin="0,10,0,0" HorizontalAlignment="Left" Style="{StaticResource Button.Primary}" Content="Add list"
+                                    Command="{Binding AddListCommand}" />
+                            <TextBlock Margin="0,8,0,0" Style="{StaticResource Text.Caption}" Foreground="{StaticResource Brush.Crimson}"
+                                       Text="{Binding AddListError}" TextWrapping="Wrap"
+                                       Visibility="{Binding AddListError, Converter={StaticResource NotNullToVisible}}" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
+
+            <!-- ═════════════ TAB 1: resolver, DNSSEC, GeoIP ═════════════ -->
+            <Grid Grid.Row="4" Visibility="{Binding Tab, Converter={StaticResource EqualsToVisible}, ConverterParameter=1}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1.1*" />
                     <ColumnDefinition Width="14" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <!-- ═════ Left: blocklists + custom domains ═════ -->
-                <StackPanel>
-                    <Border Style="{StaticResource Card}">
-                        <StackPanel>
-                            <Grid Margin="0,0,0,12">
-                                <TextBlock Style="{StaticResource Text.Overline}" FontSize="11" Foreground="{StaticResource Brush.TextPrimary}" Text="BLOCKLISTS" />
-                                <TextBlock HorizontalAlignment="Right" Style="{StaticResource Text.Mono}" FontSize="11"
-                                           Foreground="{StaticResource Brush.Violet}" Text="{Binding ActiveEntriesText}" />
-                            </Grid>
-                            <ItemsControl ItemsSource="{Binding Blocklists}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate DataType="{x:Type m:BlocklistSource}">
-                                        <Border Style="{StaticResource Card.Inset}" Margin="0,0,0,8">
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="Auto" />
-                                                    <ColumnDefinition Width="Auto" />
-                                                </Grid.ColumnDefinitions>
-                                                <StackPanel>
-                                                    <TextBlock FontSize="13" FontWeight="SemiBold" Text="{Binding Name}" />
-                                                    <TextBlock Margin="0,2,0,0" Style="{StaticResource Text.Caption}" Text="{Binding Description}" TextWrapping="Wrap" />
-                                                </StackPanel>
-                                                <TextBlock Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Style="{StaticResource Text.Mono}"
-                                                           FontSize="11" Foreground="{StaticResource Brush.TextMuted}" Text="{Binding EntryText}" />
-                                                <ToggleButton Grid.Column="2" Style="{StaticResource Toggle.Switch}" Background="{StaticResource Brush.Violet}"
-                                                              IsChecked="{Binding IsEnabled}" />
-                                            </Grid>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
-                    </Border>
+                <Border Style="{StaticResource Card}" VerticalAlignment="Top">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,12">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource SectionTitle}" Text="ENCRYPTED DNS" VerticalAlignment="Center" />
+                                <Border Margin="10,0,0,0" Style="{StaticResource Badge}" Background="{StaticResource Brush.VioletSoft}" BorderBrush="{StaticResource Brush.VioletLine}">
+                                    <TextBlock Style="{StaticResource Badge.Text}" Foreground="{StaticResource Brush.Violet}" Text="DoH · TLS" />
+                                </Border>
+                            </StackPanel>
+                            <TextBlock HorizontalAlignment="Right" Style="{StaticResource Text.Mono}" Foreground="{StaticResource Brush.Violet}" Text="{Binding LatencyText}" />
+                        </Grid>
+                        <ListBox ItemsSource="{Binding Resolvers}" SelectedItem="{Binding SelectedResolver}"
+                                 Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <RadioButton Style="{StaticResource Radio.Card}" GroupName="Resolver"
+                                                             IsChecked="{Binding IsSelected, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                                    <Grid>
+                                                        <StackPanel Margin="0,0,90,0">
+                                                            <TextBlock FontSize="13" FontWeight="SemiBold" Text="{Binding Name}" />
+                                                            <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding Note}" />
+                                                            <TextBlock Style="{StaticResource Text.Mono}" FontSize="10" Foreground="{StaticResource Brush.TextMuted}" Text="{Binding Address}" />
+                                                        </StackPanel>
+                                                        <Border HorizontalAlignment="Right" VerticalAlignment="Center" Style="{StaticResource Badge}">
+                                                            <TextBlock Style="{StaticResource Badge.Text}" Foreground="{StaticResource Brush.TextSecondary}" Text="{Binding Group}" />
+                                                        </Border>
+                                                    </Grid>
+                                                </RadioButton>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                        </ListBox>
+                        <TextBlock Margin="0,10,0,6" Style="{StaticResource Text.Overline}" Text="CUSTOM DOH ENDPOINT" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox Style="{StaticResource TextBox.Input}" Tag="https://dns.example/dns-query"
+                                     Text="{Binding CustomResolverUrl, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button Grid.Column="1" Margin="8,0,0,0" Style="{StaticResource Button.Primary}" Content="Use" Command="{Binding UseCustomResolverCommand}" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
 
-                    <Border Style="{StaticResource Card}" Margin="0,14,0,0">
-                        <StackPanel>
-                            <TextBlock Style="{StaticResource Text.Overline}" FontSize="11" Foreground="{StaticResource Brush.TextPrimary}" Text="CUSTOM BLOCKED DOMAINS" />
-                            <Grid Margin="0,12,0,10">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBox Style="{StaticResource TextBox.Input}" Tag="tracker.example.com"
-                                         Text="{Binding NewDomain, UpdateSourceTrigger=PropertyChanged}">
-                                    <TextBox.InputBindings>
-                                        <KeyBinding Key="Enter" Command="{Binding AddDomainCommand}" />
-                                    </TextBox.InputBindings>
-                                </TextBox>
-                                <Button Grid.Column="1" Margin="8,0,0,0" Style="{StaticResource Button.Primary}" Content="Block" Command="{Binding AddDomainCommand}" />
-                            </Grid>
-                            <TextBlock Style="{StaticResource Text.Caption}" Margin="2,0,0,4"
-                                       Visibility="{Binding CustomDomains.Count, Converter={StaticResource ZeroToVisible}}"
-                                       Text="No custom domains yet — add one here or hit “Block Domain” in the live feed." />
-                            <ItemsControl ItemsSource="{Binding CustomDomains}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid Margin="0,0,0,4">
-                                            <Border CornerRadius="8" Padding="10,6" Background="{StaticResource Brush.Inset}">
-                                                <Grid>
-                                                    <StackPanel Orientation="Horizontal">
-                                                        <TextBlock Style="{StaticResource Text.Icon}" FontSize="11" Text="&#xE711;" Foreground="{StaticResource Brush.Crimson}" />
-                                                        <TextBlock Margin="10,0,0,0" Style="{StaticResource Text.Mono}" Text="{Binding}" VerticalAlignment="Center" />
-                                                    </StackPanel>
-                                                    <Button HorizontalAlignment="Right" Style="{StaticResource Button.Chip}" Content="Unblock"
-                                                            Command="{Binding DataContext.RemoveDomainCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                            CommandParameter="{Binding}" />
-                                                </Grid>
-                                            </Border>
-                                        </Grid>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
-                    </Border>
-                </StackPanel>
-
-                <!-- ═════ Right: DoH + telemetry wiper ═════ -->
                 <StackPanel Grid.Column="2">
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
-                            <Grid Margin="0,0,0,12">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Style="{StaticResource Text.Overline}" FontSize="11" Foreground="{StaticResource Brush.TextPrimary}" Text="ENCRYPTED DNS" VerticalAlignment="Center" />
-                                    <Border Margin="10,0,0,0" Style="{StaticResource Badge}" Background="{StaticResource Brush.VioletSoft}" BorderBrush="{StaticResource Brush.VioletLine}">
-                                        <TextBlock Style="{StaticResource Badge.Text}" Foreground="{StaticResource Brush.Violet}" Text="DoH · TLS 1.3" />
-                                    </Border>
-                                </StackPanel>
-                                <TextBlock HorizontalAlignment="Right" Style="{StaticResource Text.Mono}" Foreground="{StaticResource Brush.Violet}"
-                                           Text="{Binding LatencyText}" />
-                            </Grid>
-                            <ListBox ItemsSource="{Binding Resolvers}" SelectedItem="{Binding SelectedResolver}"
-                                     Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                                <ListBox.ItemContainerStyle>
-                                    <Style TargetType="ListBoxItem">
-                                        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="ListBoxItem">
-                                                    <RadioButton Style="{StaticResource Radio.Card}" GroupName="Resolver"
-                                                                 IsChecked="{Binding IsSelected, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
-                                                        <Grid>
-                                                            <StackPanel>
-                                                                <TextBlock FontSize="13" FontWeight="SemiBold" Text="{Binding Name}" />
-                                                                <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding Note}" />
-                                                            </StackPanel>
-                                                            <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center" Style="{StaticResource Text.Mono}"
-                                                                       FontSize="10.5" Foreground="{StaticResource Brush.TextMuted}" Text="{Binding Address}" />
-                                                        </Grid>
-                                                    </RadioButton>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                    </Style>
-                                </ListBox.ItemContainerStyle>
-                            </ListBox>
-                        </StackPanel>
-                    </Border>
-
-                    <Border Style="{StaticResource Card}" Margin="0,14,0,0">
-                        <StackPanel>
-                            <TextBlock Style="{StaticResource Text.Overline}" FontSize="11" Foreground="{StaticResource Brush.TextPrimary}" Text="WINDOWS TELEMETRY" />
-                            <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding TelemetryServices}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate DataType="{x:Type m:TelemetryServiceStatus}">
-                                        <Grid Margin="0,0,0,8">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel>
-                                                <TextBlock Style="{StaticResource Text.Mono}" FontWeight="SemiBold" Text="{Binding Name}" />
-                                                <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding DisplayName}" />
-                                            </StackPanel>
-                                            <Border x:Name="State" Grid.Column="1" Style="{StaticResource Badge}">
-                                                <TextBlock x:Name="StateText" Style="{StaticResource Badge.Text}" Text="{Binding StateText}" />
-                                            </Border>
-                                        </Grid>
-                                        <DataTemplate.Triggers>
-                                            <DataTrigger Binding="{Binding IsNeutralized}" Value="False">
-                                                <Setter TargetName="State" Property="Background" Value="{StaticResource Brush.AmberSoft}" />
-                                                <Setter TargetName="State" Property="BorderBrush" Value="{StaticResource Brush.AmberLine}" />
-                                                <Setter TargetName="StateText" Property="Foreground" Value="{StaticResource Brush.Amber}" />
-                                            </DataTrigger>
-                                        </DataTemplate.Triggers>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-
-                            <Rectangle Style="{StaticResource Divider}" Margin="0,6,0,14" />
-
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel>
-                                    <TextBlock FontSize="13" FontWeight="SemiBold" Text="Trace log wiper" />
-                                    <TextBlock Style="{StaticResource Text.Caption}" Text="Purges .etl diagnostics &amp; AutoLogger sessions" />
+                                    <TextBlock Style="{StaticResource SectionTitle}" Text="DNSSEC VALIDATION" />
+                                    <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Caption}" TextWrapping="Wrap"
+                                               Text="Ask the resolver to verify every answer's signature chain (AD bit) and refuse forged replies." />
                                 </StackPanel>
-                                <Button Grid.Column="1" Style="{StaticResource Button.Danger}" Command="{Binding WipeLogsCommand}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Style="{StaticResource Text.Icon}" FontSize="12" Text="&#xE74D;" Foreground="{StaticResource Brush.Crimson}" />
-                                        <TextBlock Margin="8,0,0,0" Text="Wipe .etl logs" />
-                                    </StackPanel>
-                                </Button>
+                                <ToggleButton Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource Toggle.Switch}" Background="{StaticResource Brush.Mint}"
+                                              IsChecked="{Binding DnssecEnabled}" />
                             </Grid>
-                            <ProgressBar Margin="0,14,0,0" Style="{StaticResource ProgressBar.Thin}" Foreground="{StaticResource Brush.Crimson}"
-                                         Maximum="100" Value="{Binding WipeProgress, Mode=OneWay}"
-                                         Visibility="{Binding IsWiping, Converter={StaticResource BoolToVisible}}" />
-                            <TextBlock Margin="0,10,0,0" Style="{StaticResource Text.Mono}" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"
-                                       Text="{Binding LastWipeText}" />
+                            <Grid Margin="0,14,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock FontSize="13" FontWeight="SemiBold" Text="Strict: block unsigned domains" />
+                                    <TextBlock Style="{StaticResource Text.Caption}" Foreground="{StaticResource Brush.Amber}" TextWrapping="Wrap"
+                                               Text="Paranoid — most sites aren't DNSSEC-signed and will stop loading." />
+                                </StackPanel>
+                                <ToggleButton Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource Toggle.Switch}" Background="{StaticResource Brush.Crimson}"
+                                              IsChecked="{Binding DnssecStrict}" IsEnabled="{Binding DnssecEnabled}" />
+                            </Grid>
+                            <Rectangle Style="{StaticResource Divider}" Margin="0,14,0,12" />
+                            <TextBlock Style="{StaticResource Text.Overline}" Text="CHECK A DOMAIN (LIVE)" />
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox Style="{StaticResource TextBox.Input}" Tag="cloudflare.com"
+                                         Text="{Binding DnssecTestDomain, UpdateSourceTrigger=PropertyChanged}">
+                                    <TextBox.InputBindings>
+                                        <KeyBinding Key="Enter" Command="{Binding TestDnssecCommand}" />
+                                    </TextBox.InputBindings>
+                                </TextBox>
+                                <Button Grid.Column="1" Margin="8,0,0,0" Style="{StaticResource Button.Mint}" Content="Check" Command="{Binding TestDnssecCommand}" />
+                            </Grid>
+                            <TextBlock Margin="0,8,0,0" Style="{StaticResource Text.Mono}" FontSize="11" Foreground="{StaticResource Brush.TextSecondary}"
+                                       Text="{Binding DnssecTestResult}" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}" Margin="0,14,0,0">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource SectionTitle}" Text="COUNTRY LOOKUP (GEOIP)" />
+                            <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Caption}" TextWrapping="Wrap"
+                                       Text="Shows which country every resolved IP is in. The database is downloaded once (5 MB) and lookups happen on this PC — no IP is sent anywhere." />
+                            <TextBlock Margin="0,10,0,0" Style="{StaticResource Text.Mono}" FontSize="11" Foreground="{StaticResource Brush.Mint}"
+                                       Text="{Binding Geo.Status}" TextWrapping="Wrap" />
+                            <StackPanel Margin="0,10,0,0" Orientation="Horizontal">
+                                <Button Style="{StaticResource Button.Mint}" Command="{Binding DownloadGeoCommand}" Margin="0,0,8,0"
+                                        Content="Download database" Visibility="{Binding Geo.IsNotInstalled, Converter={StaticResource BoolToVisible}}" />
+                                <Button Style="{StaticResource Button.Outline}" Command="{Binding DownloadGeoCommand}" Margin="0,0,8,0"
+                                        Content="Update" Visibility="{Binding Geo.IsInstalled, Converter={StaticResource BoolToVisible}}" />
+                                <Button Style="{StaticResource Button.Ghost}" Command="{Binding DeleteGeoCommand}"
+                                        Content="Delete" Visibility="{Binding Geo.IsInstalled, Converter={StaticResource BoolToVisible}}" />
+                            </StackPanel>
+                            <TextBlock Margin="0,10,0,0" Style="{StaticResource Text.Caption}" FontSize="10.5" Text="{Binding GeoAttribution}" />
                         </StackPanel>
                     </Border>
                 </StackPanel>
             </Grid>
+
+            <!-- ═════════════ TAB 2: my rules ═════════════ -->
+            <Grid Grid.Row="4" Visibility="{Binding Tab, Converter={StaticResource EqualsToVisible}, ConverterParameter=2}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="14" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Border Style="{StaticResource Card}" VerticalAlignment="Top">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SectionTitle}" Text="ALLOWLIST — NEVER BLOCK" />
+                        <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Caption}" TextWrapping="Wrap"
+                                   Text="Overrides every filter list. Each entry covers the domain and all subdomains." />
+                        <Grid Margin="0,12,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox Style="{StaticResource TextBox.Input}" Tag="bank.example.com" Text="{Binding NewAllow, UpdateSourceTrigger=PropertyChanged}">
+                                <TextBox.InputBindings>
+                                    <KeyBinding Key="Enter" Command="{Binding AddAllowCommand}" />
+                                </TextBox.InputBindings>
+                            </TextBox>
+                            <Button Grid.Column="1" Margin="8,0,0,0" Style="{StaticResource Button.Mint}" Content="Allow" Command="{Binding AddAllowCommand}" />
+                        </Grid>
+                        <TextBlock Style="{StaticResource Text.Caption}" Visibility="{Binding AllowDomains.Count, Converter={StaticResource ZeroToVisible}}"
+                                   Text="Nothing allowlisted." />
+                        <ItemsControl ItemsSource="{Binding AllowDomains}" ItemTemplate="{StaticResource AllowRow}" />
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Column="2" Style="{StaticResource Card}" VerticalAlignment="Top">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SectionTitle}" Text="BLOCKLIST — ALWAYS BLOCK" />
+                        <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Caption}" TextWrapping="Wrap"
+                                   Text="Your own domains, also reachable from “Block Domain” in the live feed." />
+                        <Grid Margin="0,12,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox Style="{StaticResource TextBox.Input}" Tag="tracker.example.com" Text="{Binding NewDomain, UpdateSourceTrigger=PropertyChanged}">
+                                <TextBox.InputBindings>
+                                    <KeyBinding Key="Enter" Command="{Binding AddDomainCommand}" />
+                                </TextBox.InputBindings>
+                            </TextBox>
+                            <Button Grid.Column="1" Margin="8,0,0,0" Style="{StaticResource Button.Primary}" Content="Block" Command="{Binding AddDomainCommand}" />
+                        </Grid>
+                        <TextBlock Style="{StaticResource Text.Caption}" Visibility="{Binding CustomDomains.Count, Converter={StaticResource ZeroToVisible}}"
+                                   Text="No custom domains yet." />
+                        <ItemsControl ItemsSource="{Binding CustomDomains}" ItemTemplate="{StaticResource BlockRow}" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- ═════════════ TAB 3: Windows telemetry ═════════════ -->
+            <Border Grid.Row="4" Style="{StaticResource Card}" MaxWidth="640" HorizontalAlignment="Left"
+                    Visibility="{Binding Tab, Converter={StaticResource EqualsToVisible}, ConverterParameter=3}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource SectionTitle}" Text="WINDOWS TELEMETRY" />
+                    <ItemsControl Margin="0,12,0,0" ItemsSource="{Binding TelemetryServices}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type m:TelemetryServiceStatus}">
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Style="{StaticResource Text.Mono}" FontWeight="SemiBold" Text="{Binding Name}" />
+                                        <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding DisplayName}" />
+                                    </StackPanel>
+                                    <Border x:Name="State" Grid.Column="1" Style="{StaticResource Badge}">
+                                        <TextBlock x:Name="StateText" Style="{StaticResource Badge.Text}" Text="{Binding StateText}" />
+                                    </Border>
+                                </Grid>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding IsNeutralized}" Value="False">
+                                        <Setter TargetName="State" Property="Background" Value="{StaticResource Brush.AmberSoft}" />
+                                        <Setter TargetName="State" Property="BorderBrush" Value="{StaticResource Brush.AmberLine}" />
+                                        <Setter TargetName="StateText" Property="Foreground" Value="{StaticResource Brush.Amber}" />
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <Rectangle Style="{StaticResource Divider}" Margin="0,6,0,14" />
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock FontSize="13" FontWeight="SemiBold" Text="Trace log wiper" />
+                            <TextBlock Style="{StaticResource Text.Caption}" Text="Purges .etl diagnostics &amp; AutoLogger sessions" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Style="{StaticResource Button.Danger}" Command="{Binding WipeLogsCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource Text.Icon}" FontSize="12" Text="&#xE74D;" Foreground="{StaticResource Brush.Crimson}" />
+                                <TextBlock Margin="8,0,0,0" Text="Wipe .etl logs" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                    <ProgressBar Margin="0,14,0,0" Style="{StaticResource ProgressBar.Thin}" Foreground="{StaticResource Brush.Crimson}"
+                                 Maximum="100" Value="{Binding WipeProgress, Mode=OneWay}"
+                                 Visibility="{Binding IsWiping, Converter={StaticResource BoolToVisible}}" />
+                    <TextBlock Margin="0,10,0,0" Style="{StaticResource Text.Mono}" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"
+                               Text="{Binding LastWipeText}" />
+                </StackPanel>
+            </Border>
         </Grid>
     </ScrollViewer>
 </UserControl>

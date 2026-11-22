@@ -56,7 +56,7 @@
                         <Run Text="Zero" /><Run Text="Leakage" Foreground="{DynamicResource Brush.ModeAccent}" />
                     </TextBlock>
                     <TextBlock Margin="10,1,0,0" VerticalAlignment="Center" Style="{StaticResource Text.Mono}" FontSize="10.5"
-                               Foreground="{StaticResource Brush.TextMuted}" Text="v1.0" />
+                               Foreground="{StaticResource Brush.TextMuted}" Text="v1.1" />
                 </StackPanel>
 
                 <!-- Live status pill — centred across the whole window -->

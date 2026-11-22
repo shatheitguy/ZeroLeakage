@@ -15,6 +15,13 @@ class DnsQuery(
     val questionEnd: Int,
     val name: String,
     val qtype: Int,
+    val qclass: Int = 1,
+    /** IPv4 / UDP header fields of the query as it arrived from the app (for the packet inspector). */
+    val ipTtl: Int = 0,
+    val ipId: Int = 0,
+    val ipTotalLen: Int = 0,
+    val udpLen: Int = 0,
+    val udpChecksum: Int = 0,
 ) {
     val id: Int get() = ((dns[0].toInt() and 0xFF) shl 8) or (dns[1].toInt() and 0xFF)
 }
@@ -55,7 +62,12 @@ object DnsPacket {
         }
         if (p + 4 > dns.size) return null
         val qtype = u16(dns, p)
-        return DnsQuery(srcIp, dstIp, srcPort, dstPort, dns, p + 4, sb.toString().lowercase(), qtype)
+        val qclass = u16(dns, p + 2)
+        return DnsQuery(
+            srcIp, dstIp, srcPort, dstPort, dns, p + 4, sb.toString().lowercase(), qtype, qclass,
+            ipTtl = buf[8].toInt() and 0xFF, ipId = u16(buf, 4), ipTotalLen = totalLen,
+            udpLen = u16(buf, ihl + 4), udpChecksum = u16(buf, ihl + 6),
+        )
     }
 
     /** NXDOMAIN (rcode 3) or SERVFAIL (rcode 2) answer that echoes only the question. */

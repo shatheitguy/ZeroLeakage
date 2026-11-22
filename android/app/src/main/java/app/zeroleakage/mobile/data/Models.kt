@@ -25,6 +25,41 @@ data class FeedEvent(
     val packageName: String?,
     val domain: String,
     val category: String,
+    val detail: PacketDetail? = null,
+)
+
+/** Everything the packet inspector shows for one DNS transaction. */
+data class PacketDetail(
+    // who
+    val uid: Int,
+    val network: String,
+    // query packet (app → shield)
+    val srcIp: String, val srcPort: Int,
+    val dstIp: String, val dstPort: Int,
+    val ipTtl: Int, val ipId: Int, val ipTotalLen: Int, val udpLen: Int, val udpChecksum: Int,
+    val txId: Int,
+    val qtype: Int, val qclass: Int,
+    val queryFlags: String,
+    val queryEdns: String?,
+    val querySize: Int,
+    // decision
+    val ruleList: String?, val rule: String?, val ruleMatched: String?,
+    // upstream
+    val resolverName: String?, val resolverUrl: String?,
+    val dnssecRequested: Boolean,
+    val dnssec: app.zeroleakage.mobile.vpn.DnssecStatus,
+    val cached: Boolean,
+    val latencyMs: Long?,
+    val error: String?,
+    // response packet (shield → app)
+    val rcode: Int,
+    val responseFlags: String,
+    val responseSize: Int,
+    val answers: List<app.zeroleakage.mobile.vpn.DnsRecord>,
+    val authority: List<app.zeroleakage.mobile.vpn.DnsRecord>,
+    val ede: String?,
+    val queryBytes: ByteArray,
+    val responseBytes: ByteArray,
 )
 
 /** Per-app firewall rule. Absent rule = defaults (all networks allowed, not approved, not pinned). */
@@ -46,16 +81,13 @@ data class Stats(
     val allowed: Long = 0,
     val totalQueries: Long = 0,
     val dohLatencyMs: Int = 0,
-)
+    val dnssecChecked: Long = 0,
+    val dnssecSecure: Long = 0,
+    val dnssecFailed: Long = 0,
+) {
+    val dnssecPercent: Int get() = if (dnssecChecked == 0L) 0 else ((dnssecSecure * 100) / dnssecChecked).toInt()
+}
 
-data class Blocklist(
-    val id: String,
-    val name: String,
-    val description: String,
-    val asset: String,
-    val category: String,
-)
-
-data class Resolver(val id: String, val name: String, val url: String, val note: String)
+data class Resolver(val id: String, val name: String, val url: String, val note: String, val group: String = "Privacy")
 
 data class InstalledApp(val packageName: String, val label: String, val isSystem: Boolean)

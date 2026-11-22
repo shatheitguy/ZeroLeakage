@@ -43,6 +43,10 @@ public interface IProtectionEngine : IDisposable
     IReadOnlyList<TelemetryServiceStatus> GetTelemetryServices();
     Task SetBlocklistEnabledAsync(BlocklistSource list, bool enabled);
     Task SetResolverAsync(DohResolver resolver);
+    DohResolver CurrentResolver { get; }
+    bool DnssecEnabled { get; }
+    bool DnssecStrict { get; }
+    Task SetDnssecAsync(bool enabled, bool strict);
     Task<double> WipeTraceLogsAsync(IProgress<double>? progress, CancellationToken ct = default);
 
     Task SetRealtimeProtectionAsync(bool enabled);
