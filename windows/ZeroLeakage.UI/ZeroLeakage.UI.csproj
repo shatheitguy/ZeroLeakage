@@ -16,7 +16,7 @@
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
     <Product>ZeroLeakage</Product>
     <Company>ZeroLeakage</Company>
-    <Version>1.3.0</Version>
+    <Version>1.3.1</Version>
     <!-- Self-contained single folder so the MSI does not depend on an installed .NET runtime. -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>

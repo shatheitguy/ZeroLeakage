@@ -400,7 +400,16 @@ class ZeroLeakVpnService : VpnService() {
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setVisibility(NotificationCompat.VISIBILITY_SECRET)
             .setContentIntent(open)
-            .apply { if (!quiet) addAction(0, "Stop shield", stop) }
+            .apply {
+                if (!quiet) addAction(0, "Stop shield", stop)
+                val hide = PendingIntent.getActivity(this@ZeroLeakVpnService, 3,
+                    Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                        .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
+                        .putExtra(android.provider.Settings.EXTRA_CHANNEL_ID, if (quiet) CHANNEL_QUIET else CHANNEL_SHIELD)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    PendingIntent.FLAG_IMMUTABLE)
+                addAction(0, "Hide this notification", hide)
+            }
             .build()
     }
 
@@ -422,7 +431,9 @@ class ZeroLeakVpnService : VpnService() {
     }
 
     override fun onRevoke() {
+        // Android takes the VPN away when another VPN app (e.g. WireGuard) starts.
         shutdown()
+        OtherVpnWatcher.onTakenOver(this)
         stopSelf()
         super.onRevoke()
     }

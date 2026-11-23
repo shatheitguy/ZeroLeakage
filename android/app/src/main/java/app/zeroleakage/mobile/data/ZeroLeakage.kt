@@ -73,6 +73,61 @@ object ZeroLeakage {
     private val _dnssecStrict = MutableStateFlow(false)
     val dnssecStrict: StateFlow<Boolean> = _dnssecStrict.asStateFlow()
 
+    /**
+     * Everyday apps Strict Guard can approve in one tap: browsers, Google's core apps and the main messengers.
+     * (Only ones actually installed are approved.)
+     */
+    val POPULAR_APPS = setOf(
+        "com.android.chrome", "com.google.android.googlequicksearchbox", "com.google.android.youtube",
+        "com.google.android.apps.youtube.music", "com.google.android.gm", "com.google.android.apps.maps",
+        "com.android.vending", "com.google.android.apps.photos", "com.google.android.calendar",
+        "com.google.android.apps.docs", "com.google.android.keep", "com.google.android.apps.messaging",
+        "com.google.android.dialer", "com.google.android.contacts", "com.google.android.apps.translate",
+        "com.google.android.apps.nbu.files", "com.google.android.apps.authenticator2",
+        "org.mozilla.firefox", "com.brave.browser", "com.microsoft.emmx", "com.sec.android.app.sbrowser",
+        "com.opera.browser", "com.duckduckgo.mobile.android",
+        "com.whatsapp", "com.whatsapp.w4b", "org.telegram.messenger", "org.thoughtcrime.securesms",
+        "com.microsoft.teams", "com.microsoft.office.outlook", "us.zoom.videomeetings",
+        "com.samsung.android.messaging", "com.samsung.android.dialer",
+    )
+
+    /** Approves many apps at once (Strict Guard quick setup). Returns how many changed. */
+    fun approveApps(pkgs: Collection<String>): Int {
+        var n = 0
+        _rules.update { m ->
+            val out = m.toMutableMap()
+            for (p in pkgs) {
+                val r = out[p] ?: AppRule(p)
+                if (!r.approved) { out[p] = r.copy(approved = true, wifi = true, mobile = true); n++ }
+            }
+            out
+        }
+        prefs.edit().putString("rules", encodeRules(_rules.value)).apply()
+        pkgs.forEach { promptQuietUntil.remove(it); pendingPrompts.remove(it); releaseDecision(it) }
+        return n
+    }
+
+    /** Another VPN app (e.g. WireGuard) took the VPN slot, so the shield was switched off by Android. */
+    private val _takenOver = MutableStateFlow(false)
+    val takenOver: StateFlow<Boolean> = _takenOver.asStateFlow()
+    fun setTakenOver(v: Boolean) {
+        _takenOver.value = v
+        prefs.edit().putBoolean("taken_over", v).apply()
+    }
+
+    /** Set by a notification tap: the UI turns the shield back on (with Android's consent prompt if needed). */
+    private val _resumeRequested = MutableStateFlow(false)
+    val resumeRequested: StateFlow<Boolean> = _resumeRequested.asStateFlow()
+    fun requestResume(v: Boolean) { _resumeRequested.value = v }
+
+    /** One-time dashboard tips the user has dismissed. */
+    private val _dismissedTips = MutableStateFlow<Set<String>>(emptySet())
+    val dismissedTips: StateFlow<Set<String>> = _dismissedTips.asStateFlow()
+    fun dismissTip(id: String) {
+        _dismissedTips.update { it + id }
+        prefs.edit().putStringSet("tips_dismissed", _dismissedTips.value).apply()
+    }
+
     /** The shield's required notification: quiet (silent, minimised, no icon) by default. */
     private val _quietNotification = MutableStateFlow(true)
     val quietNotification: StateFlow<Boolean> = _quietNotification.asStateFlow()
@@ -165,6 +220,8 @@ object ZeroLeakage {
         _liteProvider.value = prefs.getString("lite_provider", null) ?: PrivateDns.PROVIDERS.first().id
         _startOnBoot.value = prefs.getBoolean("boot", false)
         _quietNotification.value = prefs.getBoolean("quiet_notif", true)
+        _takenOver.value = prefs.getBoolean("taken_over", false)
+        _dismissedTips.value = prefs.getStringSet("tips_dismissed", null)?.toSet() ?: emptySet()
         _onboarded.value = prefs.getBoolean("onboarded", false)
         _rules.value = decodeRules(prefs.getString("rules", null))
         _stats.value = Stats(
@@ -176,6 +233,7 @@ object ZeroLeakage {
             dnssecChecked = prefs.getLong("s_dsc", 0),
             dnssecSecure = prefs.getLong("s_dss", 0),
             dnssecFailed = prefs.getLong("s_dsf", 0),
+            byKind = BlockKind.entries.associateWith { prefs.getLong("s_k_" + it.name, 0) }.filterValues { it > 0 },
         )
         Filters.init(context, prefs)
         GeoIp.init(context)
@@ -189,6 +247,7 @@ object ZeroLeakage {
     }
 
     fun setVpnRunning(running: Boolean) {
+        if (running && _takenOver.value) setTakenOver(false)
         if (running && !_vpnRunning.value) vpnStartedAt = System.currentTimeMillis()
         _vpnRunning.value = running
         if (!running) allowedOnce.clear()
@@ -326,10 +385,14 @@ object ZeroLeakage {
                 else -> s.copy(appBlocks = s.appBlocks + 1)
             }
         }
+        if (verdict != Verdict.ALLOWED) {
+            val kind = BlockKind.of(category, byFilter)
+            _stats.update { it.copy(byKind = it.byKind + (kind to ((it.byKind[kind] ?: 0) + 1))) }
+        }
         if (verdict != Verdict.ALLOWED && pkg != null) {
             _rules.update { m -> m[pkg]?.let { m + (pkg to it.copy(blocked = it.blocked + 1)) } ?: m }
         }
-        if (_stats.value.totalQueries % 25 == 0L) persistStats()
+        if (_stats.value.totalQueries % 200 == 0L) persistStats(saveRules = false)   // battery: few disk writes
     }
 
     fun recordLatency(ms: Long) {
@@ -339,11 +402,13 @@ object ZeroLeakage {
         }
     }
 
-    fun persistStats() {
+    fun persistStats(saveRules: Boolean = true) {
         val s = _stats.value
         prefs.edit().putLong("s_tel", s.telemetryBlocked).putLong("s_trk", s.trackersBlocked)
             .putLong("s_app", s.appBlocks).putLong("s_ok", s.allowed).putLong("s_all", s.totalQueries)
-            .putLong("s_dsc", s.dnssecChecked).putLong("s_dss", s.dnssecSecure).putLong("s_dsf", s.dnssecFailed).apply()
-        prefs.edit().putString("rules", encodeRules(_rules.value)).apply()
+            .putLong("s_dsc", s.dnssecChecked).putLong("s_dss", s.dnssecSecure).putLong("s_dsf", s.dnssecFailed)
+            .apply { BlockKind.entries.forEach { putLong("s_k_" + it.name, s.byKind[it] ?: 0) } }
+            .apply()
+        if (saveRules) prefs.edit().putString("rules", encodeRules(_rules.value)).apply()
     }
 }

@@ -6,6 +6,7 @@
 <title>ZeroLeakage · Zero bits leaked</title>
 <meta name="description" content="ZeroLeakage is a privacy shield for Windows and Android. It blocks telemetry, trackers and unknown apps, and encrypts every DNS lookup." />
 <meta name="theme-color" content="#090A0F" />
+<meta name="author" content="Sharqan Ahamed (Sha The IT Guy)" />
 <meta name="keywords" content="privacy, firewall, DNS firewall, ad blocker, tracker blocker, telemetry, DNS-over-HTTPS, DNSSEC, Android, Windows, AdGuard alternative, Pi-hole alternative" />
 <meta name="robots" content="index, follow" />
 <link rel="canonical" href="https://shatheitguy.github.io/ZeroLeakage/" />
@@ -31,14 +32,25 @@
   "url": "https://shatheitguy.github.io/ZeroLeakage/",
   "downloadUrl": "https://github.com/shatheitguy/ZeroLeakage/releases/latest",
   "image": "https://shatheitguy.github.io/ZeroLeakage/assets/logo-512.png",
-  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "author": {
+    "@type": "Person",
+    "name": "Sharqan Ahamed",
+    "alternateName": "Sha The IT Guy",
+    "jobTitle": "Senior IT Infrastructure Engineer",
+    "address": { "@type": "PostalAddress", "addressLocality": "Dubai", "addressCountry": "AE" },
+    "url": "https://shatheitguy.in",
+    "image": "https://shatheitguy.github.io/ZeroLeakage/assets/author.jpg",
+    "sameAs": [
+      "https://github.com/shatheitguy",
+      "https://ae.linkedin.com/in/sharqan-ahamed-8555b8169",
+      "https://www.youtube.com/@shatheitguy"
+    ]
+  }
 }
 </script>
 <link rel="icon" href="assets/logo.svg" type="image/svg+xml" />
 <link rel="apple-touch-icon" href="assets/logo-512.png" />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
 <style>
   :root {
     --canvas: #090A0F; --card: #12151E; --card-2: #161A25; --border: #1F2433; --border-2: #2A3145;
@@ -164,6 +176,14 @@
   .promise p { color: var(--text-2); max-width: 560px; margin: 12px auto 28px; }
   .promise .cta { justify-content: center; }
 
+  .author { display: grid; grid-template-columns: auto 1fr; gap: 28px; align-items: center; }
+  .author img { width: 132px; height: 132px; border-radius: 50%; border: 2px solid var(--border-2); box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 10%, transparent); }
+  .author h3 { margin: 6px 0 2px; font-size: 24px; letter-spacing: -.01em; }
+  .author .role { color: var(--accent); font: 600 13px var(--mono); letter-spacing: .02em; transition: color .5s; }
+  .author p { color: var(--text-2); margin: 12px 0 18px; max-width: 640px; }
+  .author .links { display: flex; flex-wrap: wrap; gap: 10px; }
+  .author .links a { font-size: 13.5px; padding: 8px 14px; }
+  @media (max-width: 640px) { .author { grid-template-columns: 1fr; text-align: center; } .author img { margin: 0 auto; } .author p { margin-left: auto; margin-right: auto; } .author .links { justify-content: center; } }
   footer { border-top: 1px solid var(--border); padding: 32px 0 48px; color: var(--muted); font-size: 13px; }
   footer .wrap { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; }
   footer a:hover { color: var(--text); }
@@ -185,6 +205,7 @@
       <a href="#modes">Modes</a>
       <a href="#features">Features</a>
       <a href="#download">Download</a>
+      <a href="#author">About</a>
       <a class="gh" href="https://github.com/shatheitguy/ZeroLeakage">GitHub</a>
     </div>
   </div>
@@ -197,16 +218,16 @@
       <h1>Your devices talk.<br /><em>Make them stop.</em></h1>
       <p class="lead">ZeroLeakage cuts telemetry, trackers and unknown apps off the network, and encrypts every DNS lookup it lets through. One switch on Windows and Android.</p>
       <div class="cta" id="download">
-        <a class="btn primary" id="dl-win" href="https://github.com/shatheitguy/ZeroLeakage/releases/download/v1.3.0/ZeroLeakage-1.3.0-x64.msi">
+        <a class="btn primary" id="dl-win" href="https://github.com/shatheitguy/ZeroLeakage/releases/download/v1.3.1/ZeroLeakage-1.3.1-x64.msi">
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.5 10.5 4.4v7.1H3zM11.5 4.3 21 3v8.5h-9.5zM3 12.5h7.5v7.1L3 18.5zM11.5 12.5H21V21l-9.5-1.3z"/></svg>
           <span>Download for Windows<small>MSI · x64 · 67 MB</small></span>
         </a>
-        <a class="btn" id="dl-android" href="https://github.com/shatheitguy/ZeroLeakage/releases/download/v1.3.0/ZeroLeakage-1.3.0-release.apk">
+        <a class="btn" id="dl-android" href="https://github.com/shatheitguy/ZeroLeakage/releases/download/v1.3.1/ZeroLeakage-1.3.1-release.apk">
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.6 9.48 19.44 6.3a.4.4 0 1 0-.69-.4l-1.86 3.22a11.4 11.4 0 0 0-9.78 0L5.25 5.9a.4.4 0 1 0-.69.4L6.4 9.48A10.8 10.8 0 0 0 1 18h22a10.8 10.8 0 0 0-5.4-8.52ZM7 15.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Zm10 0a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Z"/></svg>
           <span>Get the Android APK<small>Android 10+ · 2 MB</small></span>
         </a>
       </div>
-      <div class="hero-meta">v1.3.0 · open source · no account · no analytics</div>
+      <div class="hero-meta">v1.3.1 · open source · no account · no analytics</div>
     </div>
 
     <div class="stage" aria-hidden="true">
@@ -327,7 +348,7 @@
           <li>15-minute update window, then automatic re-lock</li>
           <li>Lives in the tray; one MSI with .NET bundled</li>
         </ul>
-        <a class="btn primary" href="https://github.com/shatheitguy/ZeroLeakage/releases/download/v1.3.0/ZeroLeakage-1.3.0-x64.msi">Download MSI</a>
+        <a class="btn primary" href="https://github.com/shatheitguy/ZeroLeakage/releases/download/v1.3.1/ZeroLeakage-1.3.1-x64.msi">Download MSI</a>
         <div class="note">Preview: the UI runs on a simulated engine and does not change system settings yet.</div>
       </div>
       <div class="card platform reveal" style="--c: var(--violet)">
@@ -341,7 +362,7 @@
           <li>Privacy X-ray: which apps can read your chats, notifications and keyboard, or hear you</li>
           <li>Starts on boot; works with any network</li>
         </ul>
-        <a class="btn" href="https://github.com/shatheitguy/ZeroLeakage/releases/download/v1.3.0/ZeroLeakage-1.3.0-release.apk">Download APK</a>
+        <a class="btn" href="https://github.com/shatheitguy/ZeroLeakage/releases/download/v1.3.1/ZeroLeakage-1.3.1-release.apk">Download APK</a>
         <div class="note">Sideloaded: allow "Install unknown apps" for your browser.</div>
       </div>
     </div>
@@ -361,10 +382,32 @@
   </div>
 </section>
 
+<section id="author">
+  <div class="wrap">
+    <div class="card author reveal">
+      <img src="assets/author.jpg" alt="Sha The IT Guy" width="132" height="132" loading="lazy" />
+      <div>
+        <div class="overline">Made by</div>
+        <h3>Sharqan Ahamed</h3>
+        <div class="role">Sha The IT Guy · Senior IT Infrastructure Engineer · Dubai, UAE</div>
+        <p>7+ years designing and running the infrastructure other people take for granted: secure networks,
+          firewalls, zero-trust access and self-hosted systems. ZeroLeakage comes from the same belief:
+          your devices should work for you, not report on you. No account, no analytics, no data collection.</p>
+        <div class="links">
+          <a class="btn" href="https://shatheitguy.in" rel="noopener">shatheitguy.in</a>
+          <a class="btn" href="https://github.com/shatheitguy" rel="noopener">GitHub</a>
+          <a class="btn" href="https://ae.linkedin.com/in/sharqan-ahamed-8555b8169" rel="noopener">LinkedIn</a>
+          <a class="btn" href="https://www.youtube.com/@shatheitguy" rel="noopener">YouTube</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <footer>
   <div class="wrap">
     <a class="brand" href="#"><img src="assets/logo.svg" alt="" style="width:24px;height:24px" />Zero<span>Leakage</span></a>
-    <div class="mono">Zero bits leaked.</div>
+    <div class="mono">Zero bits leaked. · Made by <a href="#author">Sha The IT Guy</a></div>
     <div><a href="https://github.com/shatheitguy/ZeroLeakage">GitHub</a> · <a href="https://github.com/shatheitguy/ZeroLeakage/releases">Releases</a></div>
   </div>
 </footer>

@@ -88,6 +88,20 @@ fun FirewallScreen() {
                     },
                     fontSize = 13.sp, color = Zl.TextSecondary, lineHeight = 18.sp,
                 )
+                if (mode == ProtectionMode.STRICT) {
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SmallAction("Approve popular apps", Zl.Violet) {
+                            val installed = installedLaunchable(context)
+                            val n = ZeroLeakage.approveApps(ZeroLeakage.POPULAR_APPS.filter { it in installed })
+                            ZeroLeakage.say("$n popular apps approved")
+                        }
+                        SmallAction("Approve all current apps", Zl.TextSecondary) {
+                            val n = ZeroLeakage.approveApps(installedLaunchable(context))
+                            ZeroLeakage.say("$n apps approved. Only new apps will ask.")
+                        }
+                    }
+                }
                 Spacer(Modifier.height(12.dp))
                 SearchField(query, { query = it }, "Search apps…")
                 Spacer(Modifier.height(10.dp))

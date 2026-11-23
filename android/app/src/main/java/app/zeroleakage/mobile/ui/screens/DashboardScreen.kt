@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.zeroleakage.mobile.ShieldController
 import app.zeroleakage.mobile.data.FeedEvent
+import app.zeroleakage.mobile.data.ProtectionMode
 import app.zeroleakage.mobile.data.Verdict
 import app.zeroleakage.mobile.data.ZeroLeakage
 import app.zeroleakage.mobile.filters.Filters
@@ -150,7 +151,11 @@ fun DashboardScreen(shield: ShieldController) {
         }
 
         item { DnsHealthBanner() }
+        item { DashboardNotices(shield) }
         if (method == ZeroLeakage.Method.LITE) item { ProtectionMethodCard(shield) }
+
+        // ═════ What was blocked ═════
+        item { BlockedBreakdown(stats, feed, rules) }
 
         // ═════ Bento metrics 2×2 ═════
         item {
@@ -343,4 +348,159 @@ fun SearchField(value: String, onChange: (String) -> Unit, placeholder: String) 
 private fun uptime(ms: Long): String {
     val s = (ms / 1000).coerceAtLeast(0)
     return String.format(Locale.US, "%02d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60)
+}
+
+/** Context-aware tips at the top of the dashboard. */
+@Composable
+fun DashboardNotices(shield: ShieldController) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val running by ZeroLeakage.vpnRunning.collectAsStateWithLifecycle()
+    val mode by ZeroLeakage.mode.collectAsStateWithLifecycle()
+    val method by ZeroLeakage.method.collectAsStateWithLifecycle()
+    val takenOver by ZeroLeakage.takenOver.collectAsStateWithLifecycle()
+    val resume by ZeroLeakage.resumeRequested.collectAsStateWithLifecycle()
+    val rules by ZeroLeakage.rules.collectAsStateWithLifecycle()
+    val tips by ZeroLeakage.dismissedTips.collectAsStateWithLifecycle()
+
+    // A tap on "Turn shield on" in a notification lands here.
+    LaunchedEffect(resume) {
+        if (resume) {
+            ZeroLeakage.requestResume(false)
+            app.zeroleakage.mobile.vpn.OtherVpnWatcher.cancel(context)
+            if (!ZeroLeakage.vpnRunning.value) shield.start()
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (takenOver && !running && method == ZeroLeakage.Method.FULL) {
+            Notice(
+                "Another VPN (like WireGuard) took Android's VPN slot, so the shield paused. Android runs one VPN at a time. " +
+                    "When that VPN turns off, ZeroLeakage offers to come back. Lite mode works alongside it with no conflict.",
+                Zl.Amber, action = "Turn shield back on",
+            ) { shield.start() }
+            SmallAction("Use Lite mode with my VPN", Zl.Mint) {
+                ZeroLeakage.setMethod(ZeroLeakage.Method.LITE)
+                ZeroLeakage.setTakenOver(false)
+                ZeroLeakage.say("Lite mode: pick a filtering DNS below; it works with WireGuard")
+            }
+        }
+        val approved = rules.values.count { it.approved }
+        if (mode == ProtectionMode.STRICT && approved < 3 && "strict_setup" !in tips) {
+            Notice(
+                "Strict Guard asks before every app goes online, so at first a lot gets blocked. Approve the apps you use every day " +
+                    "(Chrome, Google, YouTube, Gmail, Maps, Play Store, WhatsApp…) and it will only ask about new or unknown apps.",
+                Zl.Violet, action = "Approve popular apps",
+            ) {
+                val installed = installedLaunchable(context)
+                val n = ZeroLeakage.approveApps(ZeroLeakage.POPULAR_APPS.filter { it in installed })
+                ZeroLeakage.say("$n popular apps approved")
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SmallAction("Approve all apps I have now", Zl.TextSecondary) {
+                    val n = ZeroLeakage.approveApps(installedLaunchable(context))
+                    ZeroLeakage.say("$n apps approved. Strict Guard now asks only about new apps.")
+                }
+                SmallAction("Dismiss", Zl.TextMuted) { ZeroLeakage.dismissTip("strict_setup") }
+            }
+        }
+        if (running && "hide_notification" !in tips) {
+            Notice(
+                "Android shows a notification whenever any VPN is on. ZeroLeakage keeps it silent and minimised; you can hide it completely and the shield keeps running.",
+                Zl.TextSecondary, action = "Hide the notification",
+            ) {
+                val i = android.content.Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                    .putExtra(android.provider.Settings.EXTRA_CHANNEL_ID, app.zeroleakage.mobile.vpn.ZeroLeakVpnService.CHANNEL_QUIET)
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                runCatching { context.startActivity(i) }
+                ZeroLeakage.dismissTip("hide_notification")
+                ZeroLeakage.say("Turn off \"Shield status (quiet)\"")
+            }
+        }
+    }
+}
+
+/** Packages of apps that have a launcher icon (what Strict Guard asks about). */
+fun installedLaunchable(context: android.content.Context): Set<String> {
+    val pm = context.packageManager
+    val intent = android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+    return pm.queryIntentActivities(intent, 0).map { it.activityInfo.packageName }.filter { it != context.packageName }.toSet()
+}
+
+private fun kindColor(k: app.zeroleakage.mobile.data.BlockKind): Color = when (k) {
+    app.zeroleakage.mobile.data.BlockKind.TRACKERS -> Zl.Violet
+    app.zeroleakage.mobile.data.BlockKind.TELEMETRY -> Zl.Amber
+    app.zeroleakage.mobile.data.BlockKind.MALWARE -> Zl.Crimson
+    app.zeroleakage.mobile.data.BlockKind.PARENTAL -> Color(0xFFFF7AC6)
+    app.zeroleakage.mobile.data.BlockKind.USER -> Zl.TextSecondary
+    app.zeroleakage.mobile.data.BlockKind.APPS -> Zl.Mint
+    app.zeroleakage.mobile.data.BlockKind.DNSSEC -> Color(0xFF4FC3F7)
+}
+
+/** "What ZeroLeakage blocked": totals per kind with bars, top blocked domains and the apps blocked most. */
+@Composable
+fun BlockedBreakdown(stats: app.zeroleakage.mobile.data.Stats, feed: List<FeedEvent>, rules: Map<String, app.zeroleakage.mobile.data.AppRule>) {
+    val total = stats.totalBlocked
+    GlassCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Overline("What was blocked", color = Zl.TextPrimary)
+            Spacer(Modifier.weight(1f))
+            Text(formatCount(total), style = Zl.mono.copy(fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Zl.Crimson))
+        }
+        Text(
+            if (stats.totalQueries > 0) "${"%.1f".format(java.util.Locale.US, total * 100.0 / stats.totalQueries)}% of ${formatCount(stats.totalQueries)} lookups blocked"
+            else "Nothing yet: engage the shield and use your phone as normal.",
+            fontSize = 11.5.sp, color = Zl.TextMuted,
+        )
+        Spacer(Modifier.height(12.dp))
+        val max = (stats.byKind.values.maxOrNull() ?: 0L).coerceAtLeast(1)
+        app.zeroleakage.mobile.data.BlockKind.entries.forEach { k ->
+            val n = stats.byKind[k] ?: 0
+            if (n == 0L && k in setOf(app.zeroleakage.mobile.data.BlockKind.PARENTAL, app.zeroleakage.mobile.data.BlockKind.DNSSEC, app.zeroleakage.mobile.data.BlockKind.USER)) return@forEach
+            val c = kindColor(k)
+            Column(Modifier.padding(bottom = 10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(8.dp).clip(RoundedCornerShape(2.dp)).background(c))
+                    Spacer(Modifier.width(8.dp))
+                    Text(k.title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Zl.TextPrimary, modifier = Modifier.weight(1f))
+                    Text(formatCount(n), style = Zl.mono.copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (n > 0) c else Zl.TextMuted))
+                }
+                Spacer(Modifier.height(5.dp))
+                Box(Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)).background(Zl.Inset)) {
+                    Box(Modifier.fillMaxWidth((n.toFloat() / max).coerceIn(0f, 1f)).height(5.dp).clip(RoundedCornerShape(3.dp)).background(c))
+                }
+                Text(k.explain, fontSize = 10.5.sp, color = Zl.TextMuted, modifier = Modifier.padding(top = 3.dp))
+            }
+        }
+
+        // Top blocked domains (recent feed) and the apps blocked most.
+        val topDomains = feed.filter { it.verdict != Verdict.ALLOWED }.groupingBy { it.domain }.eachCount()
+            .entries.sortedByDescending { it.value }.take(5)
+        val topApps = rules.values.filter { it.blocked > 0 }.sortedByDescending { it.blocked }.take(5)
+        val labels = feed.mapNotNull { e -> e.packageName?.let { it to e.appLabel } }.toMap()
+        if (topDomains.isNotEmpty()) {
+            Spacer(Modifier.height(4.dp))
+            Overline("Most-blocked domains (recent)")
+            Spacer(Modifier.height(6.dp))
+            topDomains.forEach { (d, n) ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                    Text(d, style = Zl.mono.copy(fontSize = 11.5.sp, color = Zl.TextSecondary), maxLines = 1,
+                        overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Text("×$n", style = Zl.mono.copy(fontSize = 11.5.sp, color = Zl.TextMuted))
+                }
+            }
+        }
+        if (topApps.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            Overline("Apps blocked most")
+            Spacer(Modifier.height(6.dp))
+            topApps.forEach { r ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                    Text(labels[r.packageName] ?: r.packageName, fontSize = 12.sp, color = Zl.TextSecondary, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Text(formatCount(r.blocked), style = Zl.mono.copy(fontSize = 11.5.sp, color = Zl.TextMuted))
+                }
+            }
+        }
+    }
 }

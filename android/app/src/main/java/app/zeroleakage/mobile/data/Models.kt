@@ -84,8 +84,35 @@ data class Stats(
     val dnssecChecked: Long = 0,
     val dnssecSecure: Long = 0,
     val dnssecFailed: Long = 0,
+    /** Blocked lookups per kind (see [BlockKind]), since the counters were last reset. */
+    val byKind: Map<BlockKind, Long> = emptyMap(),
 ) {
+    val totalBlocked: Long get() = byKind.values.sum()
     val dnssecPercent: Int get() = if (dnssecChecked == 0L) 0 else ((dnssecSecure * 100) / dnssecChecked).toInt()
+}
+
+/** What a blocked lookup was, for the dashboard breakdown. */
+enum class BlockKind(val title: String, val explain: String) {
+    TRACKERS("Ads & trackers", "Ad networks, analytics SDKs, tracking pixels"),
+    TELEMETRY("Telemetry", "Phone-home from Android, Google, Samsung, Xiaomi, Meta…"),
+    MALWARE("Malware, phishing & scams", "Virus, phishing, scam and crypto-mining sites"),
+    PARENTAL("Adult, gambling & social", "Parental-control lists you enabled"),
+    USER("Your blocklist", "Domains you blocked yourself"),
+    APPS("App firewall", "Strict Guard, lockdown and per-app kill switches"),
+    DNSSEC("DNSSEC failures", "Answers that failed signature checks (possible spoofing)");
+
+    companion object {
+        /** Maps a feed category to a kind (null = not a block). */
+        fun of(category: String, byFilter: Boolean): BlockKind = when {
+            category.startsWith("DNSSEC") -> DNSSEC
+            category == "User Blocklist" -> USER
+            category == "Telemetry" -> TELEMETRY
+            category == "Malware" -> MALWARE
+            category in setOf("Adult", "Gambling", "Social") -> PARENTAL
+            byFilter -> TRACKERS
+            else -> APPS
+        }
+    }
 }
 
 data class Resolver(val id: String, val name: String, val url: String, val note: String, val group: String = "Privacy")

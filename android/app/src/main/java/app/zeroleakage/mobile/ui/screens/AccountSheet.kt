@@ -80,7 +80,7 @@ fun ProfileButton(accent: Color, onClick: () -> Unit) {
     }
 }
 
-enum class AccountDestination { SETTINGS, ABOUT, XRAY }
+enum class AccountDestination { SETTINGS, ABOUT, XRAY, UPDATE }
 
 /** Profile menu: account (optional), privacy X-ray, settings, about, updates. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -116,9 +116,9 @@ fun AccountSheet(onDismiss: () -> Unit, onNavigate: (AccountDestination) -> Unit
                 Icons.Filled.Refresh, "Check for updates", updateSubtitle(update),
                 badge = if (update is Updates.State.Available) "NEW" else null,
             ) {
-                val s = update
-                if (s is Updates.State.Available) Updates.open(context, s.release.apkUrl ?: s.release.pageUrl)
-                else scope.launch { Updates.check(context, force = true).also { ZeroLeakage.say(updateSubtitle(it)) } }
+                // Always open the update screen: it checks, then downloads, verifies and installs in-app.
+                onNavigate(AccountDestination.UPDATE)
+                if (update !is Updates.State.Available) scope.launch { Updates.check(context, force = true) }
             }
         }
     }
@@ -128,7 +128,7 @@ fun updateSubtitle(s: Updates.State): String = when (s) {
     Updates.State.Idle -> "Tap to check GitHub for a newer version"
     Updates.State.Checking -> "Checking…"
     is Updates.State.UpToDate -> "You're on the latest version (${s.current})"
-    is Updates.State.Available -> "Version ${s.release.version} is available · tap to download"
+    is Updates.State.Available -> "Version ${s.release.version} is available · tap to update"
     is Updates.State.Failed -> "Couldn't check: ${s.message}"
 }
 
@@ -157,7 +157,7 @@ private fun MenuItem(icon: ImageVector, title: String, subtitle: String, badge: 
 
 /** App details, device details and update check. */
 @Composable
-fun AboutScreen(onClose: () -> Unit) {
+fun AboutScreen(onClose: () -> Unit, onOpenUpdate: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val update by Updates.state.collectAsStateWithLifecycle()
@@ -216,7 +216,7 @@ fun AboutScreen(onClose: () -> Unit) {
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (s is Updates.State.Available) {
-                        SmallAction("Download ${s.release.version}", Zl.Mint) { Updates.open(context, s.release.apkUrl ?: s.release.pageUrl) }
+                        SmallAction("Update to ${s.release.version}", Zl.Mint) { onOpenUpdate() }
                         SmallAction("What's new", Zl.TextSecondary) { Updates.open(context, s.release.pageUrl) }
                     } else {
                         SmallAction(if (s is Updates.State.Checking) "Checking…" else "Check for updates", Zl.Mint) {

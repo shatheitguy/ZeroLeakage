@@ -9,6 +9,7 @@ import app.zeroleakage.mobile.ui.screens.AccountDestination
 import app.zeroleakage.mobile.ui.screens.AccountSheet
 import app.zeroleakage.mobile.ui.screens.PrivacyXrayScreen
 import app.zeroleakage.mobile.ui.screens.ProfileButton
+import app.zeroleakage.mobile.ui.screens.UpdateScreen
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.material3.Snackbar
@@ -176,7 +177,8 @@ fun ZeroLeakageApp() {
         ) {
             Box(Modifier.fillMaxSize().background(Zl.Canvas)) {
                 when (dest) {
-                    AccountDestination.ABOUT -> AboutScreen(onClose = { overlay = null })
+                    AccountDestination.ABOUT -> AboutScreen(onClose = { overlay = null }, onOpenUpdate = { overlay = AccountDestination.UPDATE })
+                    AccountDestination.UPDATE -> UpdateScreen(onClose = { overlay = null })
                     AccountDestination.XRAY -> PrivacyXrayScreen(onClose = { overlay = null })
                     AccountDestination.SETTINGS -> Unit
                 }

@@ -15,7 +15,7 @@ class DohClient {
     private class Entry(val response: ByteArray, val expiresAt: Long)
 
     private val cache = object : LinkedHashMap<String, Entry>(512, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Entry>?) = size > 1_000
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Entry>?) = size > 4_000
     }
 
     fun cached(q: DnsQuery): ByteArray? = synchronized(cache) {
@@ -52,13 +52,17 @@ class DohClient {
                 out.toByteArray()
             }
             val latency = SystemClock.elapsedRealtime() - started
-            val ttl = minTtlSeconds(bytes).coerceIn(10, 300)
+            // Battery: respect real TTLs (up to an hour) instead of re-asking every few seconds.
+            val ttl = minTtlSeconds(bytes).coerceIn(60, 3_600)
             synchronized(cache) {
                 cache["${q.name}/${q.qtype}"] = Entry(bytes, SystemClock.elapsedRealtime() + ttl * 1_000L)
             }
             return DnsPacket.withId(bytes, q.id) to latency
-        } finally {
+        } catch (e: Exception) {
+            // Only a failed exchange tears the connection down; a good one stays pooled (keep-alive),
+            // so the next lookup skips the TCP + TLS handshake. That handshake was the biggest battery cost.
             conn.disconnect()
+            throw e
         }
     }
 

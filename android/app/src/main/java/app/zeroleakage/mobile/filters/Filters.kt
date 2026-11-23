@@ -70,7 +70,13 @@ object Filters {
         app = context.applicationContext
         prefs = sharedPrefs
         _lists.value = FilterCatalog.LISTS + decodeCustom(prefs.getString("custom_lists", null))
-        _enabled.value = prefs.getStringSet("lists", null)?.toSet() ?: FilterCatalog.DEFAULT_ON
+        _enabled.value = prefs.getStringSet("lists", null)?.toSet() ?: FilterCatalog.defaultsForDevice()
+        // One-time privacy upgrade for existing installs: add the stronger anti-tracking defaults
+        // (EasyPrivacy, TikTok + phone-maker telemetry lists). Lists you switched off later stay off.
+        if (!prefs.getBoolean("privacy_defaults_v2", false)) {
+            _enabled.value = _enabled.value + (FilterCatalog.defaultsForDevice() - FilterCatalog.DEFAULT_ON) + "easyprivacy"
+            prefs.edit().putStringSet("lists", _enabled.value).putBoolean("privacy_defaults_v2", true).apply()
+        }
         _userBlock.value = prefs.getStringSet("custom", null)?.toSet() ?: emptySet()
         _userAllow.value = prefs.getStringSet("allow", null)?.toSet() ?: emptySet()
         _status.value = decodeMeta(prefs.getString("filter_meta", null)).mapValues { (id, s) ->
@@ -120,7 +126,7 @@ object Filters {
     /** Adds a custom filter subscription. Returns an error message, or null on success. */
     fun addCustom(rawUrl: String, rawName: String): String? {
         val url = rawUrl.trim()
-        if (!url.startsWith("https://") && !url.startsWith("http://")) return "Enter an http(s):// URL"
+        if (!url.startsWith("https://")) return "Use an https:// URL (plain http lists could be tampered with on the way)"
         if (runCatching { URL(url) }.isFailure) return "That URL isn't valid"
         if (_lists.value.any { it.url == url }) return "That list is already in the catalog"
         val id = "custom_" + Integer.toHexString(url.hashCode())
@@ -165,7 +171,7 @@ object Filters {
     fun unallow(domain: String) { _userAllow.update { it - domain }; persistUser() }
 
     fun restoreDefaults() {
-        _enabled.value = FilterCatalog.DEFAULT_ON
+        _enabled.value = FilterCatalog.defaultsForDevice()
         _userBlock.value = emptySet()
         _userAllow.value = emptySet()
         prefs.edit().remove("lists").remove("custom").remove("allow").apply()

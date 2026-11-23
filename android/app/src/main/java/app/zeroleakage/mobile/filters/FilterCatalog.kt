@@ -56,7 +56,7 @@ object FilterCatalog {
             G_ADS, "Ad Tracker", "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=0&mimetype=plaintext",
             homepage = "https://pgl.yoyo.org/adservers/", approxRules = "~3K"),
         FilterList("easyprivacy", "EasyPrivacy", "Tracking-only list from the EasyList authors (domain rules only).",
-            G_ADS, "Ad Tracker", "https://easylist.to/easylist/easyprivacy.txt", homepage = "https://easylist.to", approxRules = "~25K"),
+            G_ADS, "Ad Tracker", "https://easylist.to/easylist/easyprivacy.txt", homepage = "https://easylist.to", defaultOn = true, approxRules = "~25K"),
         FilterList("hagezi_popup", "HaGeZi Pop-Up Ads", "Malicious pop-up, pop-under and redirect ad networks.",
             G_ADS, "Ad Tracker", "$HAGEZI/popupads.txt", homepage = "https://github.com/hagezi/dns-blocklists", approxRules = "~60K"),
         FilterList("someonewhocares", "Dan Pollock's hosts", "someonewhocares.org hosts: ads, banners, tracking and shock sites.",
@@ -113,4 +113,20 @@ object FilterCatalog {
     )
 
     val DEFAULT_ON: Set<String> = LISTS.filter { it.defaultOn }.map { it.id }.toSet()
+
+    /**
+     * Anti-tracking defaults for this phone: the base set, TikTok's tracker list (TikTok itself keeps working)
+     * and the maker's own telemetry list, matched from the manufacturer.
+     */
+    fun defaultsForDevice(manufacturer: String = android.os.Build.MANUFACTURER ?: ""): Set<String> {
+        val m = manufacturer.lowercase()
+        val brand = when {
+            "samsung" in m -> "hagezi_samsung"
+            "xiaomi" in m || "redmi" in m || "poco" in m -> "hagezi_xiaomi"
+            "huawei" in m || "honor" in m -> "hagezi_huawei"
+            "amazon" in m -> "hagezi_amazon"
+            else -> null
+        }
+        return DEFAULT_ON + "hagezi_tiktok" + listOfNotNull(brand).filter { id -> LISTS.any { it.id == id } }
+    }
 }

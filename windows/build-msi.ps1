@@ -1,7 +1,7 @@
 # Builds the Windows desktop app and wraps it in an MSI.
-#   powershell -ExecutionPolicy Bypass -File windows\build-msi.ps1 [-Version 1.3.0]
+#   powershell -ExecutionPolicy Bypass -File windows\build-msi.ps1 [-Version 1.3.1]
 # Output: windows\artifacts\msi\ZeroLeakage-<version>-x64.msi
-param([string]$Version = "1.3.0")
+param([string]$Version = "1.3.1")
 $ErrorActionPreference = "Stop"
 
 $root = $PSScriptRoot

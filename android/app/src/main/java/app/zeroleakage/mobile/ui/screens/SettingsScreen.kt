@@ -53,6 +53,33 @@ fun SettingsScreen(shield: ShieldController) {
                 SettingRow("Shield running", if (running) "Encrypted DNS + firewall active" else "Tap to engage") {
                     ZlSwitch(running, { if (it) shield.start() else shield.stop() })
                 }
+                val ctxB = androidx.compose.ui.platform.LocalContext.current
+                var unrestricted by remember { mutableStateOf(true) }
+                androidx.compose.runtime.LaunchedEffect(Unit) {
+                    while (true) {
+                        unrestricted = ctxB.getSystemService(android.os.PowerManager::class.java)
+                            ?.isIgnoringBatteryOptimizations(ctxB.packageName) == true
+                        kotlinx.coroutines.delay(3_000)
+                    }
+                }
+                SettingRow(
+                    "Battery",
+                    if (unrestricted) "Unrestricted: your phone won't stop the shield in the background"
+                    else "Optimised: some phones (Samsung, Xiaomi, Oppo…) may stop the shield to save power",
+                ) {
+                    if (!unrestricted) SmallAction("Fix", Zl.Amber) {
+                        runCatching {
+                            ctxB.startActivity(android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                        }
+                        ZeroLeakage.say("Find ZeroLeakage and choose \"Don't optimise\" / \"Unrestricted\"")
+                    } else Text("✓", color = Zl.Mint, fontWeight = FontWeight.Bold)
+                }
+                Text(
+                    "Tip: add the \"ZeroLeakage\" (on/off) and \"ZL mode\" tiles to your Quick Settings: pull down twice, tap the pencil, drag them in.",
+                    fontSize = 11.5.sp, color = Zl.TextSecondary, lineHeight = 15.sp,
+                )
+                Spacer(Modifier.height(8.dp))
                 val quiet by ZeroLeakage.quietNotification.collectAsStateWithLifecycle()
                 SettingRow("Quiet notification", if (quiet) "Silent and minimised: no sound, no status-bar icon" else "Detailed, with a Stop button") {
                     ZlSwitch(quiet, ZeroLeakage::setQuietNotification)

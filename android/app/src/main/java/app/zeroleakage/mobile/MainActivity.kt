@@ -27,18 +27,25 @@ import androidx.compose.ui.Modifier
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import app.zeroleakage.mobile.data.ZeroLeakage
 import app.zeroleakage.mobile.ui.ZeroLeakageApp
 import app.zeroleakage.mobile.ui.components.SplashOverlay
 import app.zeroleakage.mobile.ui.theme.ZeroLeakageTheme
 import app.zeroleakage.mobile.vpn.ZeroLeakVpnService
 
 class MainActivity : ComponentActivity() {
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        if (intent.getBooleanExtra(app.zeroleakage.mobile.vpn.OtherVpnWatcher.EXTRA_RESUME, false)) ZeroLeakage.requestResume(true)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(0xFF090A0F.toInt()),
             navigationBarStyle = SystemBarStyle.dark(0xFF090A0F.toInt()),
         )
+        if (intent?.getBooleanExtra(app.zeroleakage.mobile.vpn.OtherVpnWatcher.EXTRA_RESUME, false) == true) ZeroLeakage.requestResume(true)
         val coldStart = savedInstanceState == null
         setContent {
             ZeroLeakageTheme {
