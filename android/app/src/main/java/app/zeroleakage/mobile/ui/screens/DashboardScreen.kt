@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.zeroleakage.mobile.ShieldController
 import app.zeroleakage.mobile.data.FeedEvent
+import app.zeroleakage.mobile.data.FeedHistory
 import app.zeroleakage.mobile.data.ProtectionMode
 import app.zeroleakage.mobile.data.Verdict
 import app.zeroleakage.mobile.data.ZeroLeakage
@@ -88,16 +89,27 @@ fun DashboardScreen(shield: ShieldController) {
     var inspecting by remember { mutableStateOf<FeedEvent?>(null) }
     inspecting?.let { PacketInspector(it) { inspecting = null } }
 
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(running) {
-        while (running) { now = System.currentTimeMillis(); delay(1_000) }
-    }
+    // Uptime clock: ticks only while the dashboard is on screen and the shield is running.
+    val now = app.zeroleakage.mobile.ui.components.rememberVisibleTicker(1_000, enabled = running)
 
-    val visible = feed.filter {
+    // Live = the in-memory stream; Today / Yesterday / 7 days come from the on-device history.
+    var range by rememberSaveable { mutableStateOf(FeedHistory.Range.LIVE) }
+    val liveVisible = feed.filter {
         (filter == FeedFilter.ALL || (filter == FeedFilter.BLOCKED && it.verdict != Verdict.ALLOWED) ||
             (filter == FeedFilter.ALLOWED && it.verdict == Verdict.ALLOWED)) &&
             (query.isBlank() || it.domain.contains(query, true) || it.appLabel.contains(query, true) || it.category.contains(query, true))
     }
+    // Re-query history when the view changes, and every 25 new lookups while "Today"/"7 days" is open.
+    val historyKey = if (range == FeedHistory.Range.TODAY || range == FeedHistory.Range.WEEK) (feed.firstOrNull()?.id ?: 0L) / 25 else 0L
+    val history by androidx.compose.runtime.produceState<List<FeedEvent>?>(null, range, filter, query, historyKey) {
+        value = if (range == FeedHistory.Range.LIVE) null else FeedHistory.query(
+            range, when (filter) { FeedFilter.ALL -> null; FeedFilter.BLOCKED -> true; FeedFilter.ALLOWED -> false }, query,
+        )
+    }
+    val summary by androidx.compose.runtime.produceState<FeedHistory.Summary?>(null, range, historyKey) {
+        value = if (range == FeedHistory.Range.LIVE) null else FeedHistory.summary(range)
+    }
+    val visible = if (range == FeedHistory.Range.LIVE) liveVisible else history ?: emptyList()
 
     LazyColumn(
         contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 20.dp),
@@ -133,12 +145,24 @@ fun DashboardScreen(shield: ShieldController) {
                         fontSize = 12.5.sp, color = Zl.Mint, lineHeight = 17.sp,
                     )
                 } else if (running) {
-                    OutlinedButton(
-                        onClick = shield.stop,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Zl.BorderStrong),
-                    ) { Text("Stop shield", color = Zl.TextSecondary) }
+                    val ctxP = androidx.compose.ui.platform.LocalContext.current
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = shield.stop,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Zl.BorderStrong),
+                        ) { Text("Stop shield", color = Zl.TextSecondary) }
+                        OutlinedButton(
+                            onClick = {
+                                ZeroLeakage.pauseForOtherVpn(ctxP)
+                                ZeroLeakage.say("Paused. Start your other VPN; the shield comes back when it disconnects.")
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Zl.Violet.copy(alpha = 0.6f)),
+                        ) { Text("Pause for VPN", color = Zl.Violet) }
+                    }
                 } else {
                     Button(
                         onClick = shield.start,
@@ -178,11 +202,18 @@ fun DashboardScreen(shield: ShieldController) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(8.dp).clip(RoundedCornerShape(50)).background(if (running) accent else Zl.TextMuted))
                     Spacer(Modifier.width(8.dp))
-                    Overline("Live DNS feed", color = Zl.TextPrimary)
+                    Overline(if (range == FeedHistory.Range.LIVE) "Live DNS feed" else "DNS history", color = Zl.TextPrimary)
                     Spacer(Modifier.weight(1f))
-                    Text("${feed.size} events", style = Zl.mono.copy(fontSize = 10.5.sp, color = Zl.TextMuted))
+                    Text(
+                        summary?.let { "${formatCount(it.total)} lookups · ${formatCount(it.blocked)} blocked" } ?: "${feed.size} events",
+                        style = Zl.mono.copy(fontSize = 10.5.sp, color = Zl.TextMuted),
+                    )
                 }
                 Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FeedHistory.Range.entries.forEach { r -> Chip(r.title, range == r, accent, { range = r; expanded = null }) }
+                }
+                Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Chip("All", filter == FeedFilter.ALL, accent, { filter = FeedFilter.ALL })
                     Chip("Blocked", filter == FeedFilter.BLOCKED, accent, { filter = FeedFilter.BLOCKED })
@@ -196,7 +227,12 @@ fun DashboardScreen(shield: ShieldController) {
         if (visible.isEmpty()) {
             item {
                 Text(
-                    if (running) "Waiting for DNS lookups…" else "Engage the shield to see every lookup on this phone in real time.",
+                    when {
+                        range != FeedHistory.Range.LIVE && history == null -> "Loading…"
+                        range != FeedHistory.Range.LIVE -> "No lookups ${range.title.lowercase()}${if (query.isNotBlank() || filter != FeedFilter.ALL) " match this filter" else ""}."
+                        running -> "Waiting for DNS lookups…"
+                        else -> "Engage the shield to see every lookup on this phone in real time."
+                    },
                     fontSize = 12.sp, color = Zl.TextMuted, modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
                 )
             }
@@ -209,6 +245,13 @@ fun DashboardScreen(shield: ShieldController) {
 }
 
 private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.US)
+private val dayTimeFormat = SimpleDateFormat("EEE HH:mm", Locale.US)
+
+/** Time for today's lookups; weekday + time for older ones (history views). */
+private fun feedTime(t: Long): String {
+    val startOfToday = FeedHistory.bounds(FeedHistory.Range.TODAY).first
+    return if (t >= startOfToday) timeFormat.format(Date(t)) else dayTimeFormat.format(Date(t))
+}
 
 @Composable
 private fun FeedRow(e: FeedEvent, isExpanded: Boolean, onInspect: () -> Unit, onClick: () -> Unit) {
@@ -225,7 +268,7 @@ private fun FeedRow(e: FeedEvent, isExpanded: Boolean, onInspect: () -> Unit, on
             .padding(horizontal = 12.dp, vertical = 9.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(timeFormat.format(Date(e.time)), style = Zl.mono.copy(fontSize = 10.5.sp, color = Zl.TextMuted))
+            Text(feedTime(e.time), style = Zl.mono.copy(fontSize = 10.5.sp, color = Zl.TextMuted))
             Spacer(Modifier.width(8.dp))
             Badge(e.verdict.name.replace("PROMPT", "ASK"), color)
             Spacer(Modifier.width(8.dp))
@@ -244,9 +287,15 @@ private fun FeedRow(e: FeedEvent, isExpanded: Boolean, onInspect: () -> Unit, on
                 }
             }
         }
+        if (e.packageName != null && e.verdict != Verdict.ALLOWED && e.category in setOf("Ask to Connect", "Total Lockdown")) {
+            val ctxA = androidx.compose.ui.platform.LocalContext.current
+            val advice = remember(e.packageName) { app.zeroleakage.mobile.data.AppAdvice.forPackage(ctxA, e.packageName) }
+            Spacer(Modifier.height(6.dp))
+            AdviceLine(advice)
+        }
         AnimatedVisibility(isExpanded) {
             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SmallAction("Details", Zl.Violet, onInspect)
+                if (e.detail != null) SmallAction("Details", Zl.Violet, onInspect)
                 if (e.verdict == Verdict.ALLOWED) SmallAction("Block domain", Zl.TextSecondary) {
                     Filters.block(e.domain)
                     ZeroLeakage.say("${e.domain} blocked")
@@ -277,16 +326,17 @@ private fun allowEvent(e: FeedEvent) {
             ZeroLeakage.say("${e.appLabel} allowed. It can connect now.")
         }
         pkg != null && e.category == "Total Lockdown" -> {
-            ZeroLeakage.updateRule(pkg) { it.copy(pinned = true, wifi = true, mobile = true) }
-            ZeroLeakage.say("${e.appLabel} pinned: allowed in Total Zero-Leak")
+            ZeroLeakage.updateRule(pkg) { it.copy(approved = true, wifi = true, mobile = true) }
+            ZeroLeakage.say("${e.appLabel} allowed. It works in Total Zero-Leak and Strict Guard.")
         }
         pkg != null && e.category == "App Network Killed" -> {
             ZeroLeakage.updateRule(pkg) { it.copy(wifi = true, mobile = true) }
             ZeroLeakage.say("${e.appLabel} back online")
         }
         else -> {
-            Filters.allow(e.domain)
-            ZeroLeakage.say("${e.domain} allowed for every app")
+            if (Filters.allow(e.domain) == null && Filters.blockedByAdmin(e.domain))
+                ZeroLeakage.say("${e.domain} is blocked by your server's admin")
+            else ZeroLeakage.say("${e.domain} allowed for every app")
         }
     }
 }
@@ -362,6 +412,16 @@ fun DashboardNotices(shield: ShieldController) {
     val rules by ZeroLeakage.rules.collectAsStateWithLifecycle()
     val tips by ZeroLeakage.dismissedTips.collectAsStateWithLifecycle()
 
+    val alwaysOn by ZeroLeakage.alwaysOn.collectAsStateWithLifecycle()
+
+    // Opening the app while the shield is paused for another VPN that has since disconnected: come back now.
+    LaunchedEffect(takenOver) {
+        if (takenOver && !ZeroLeakage.vpnRunning.value && method == ZeroLeakage.Method.FULL &&
+            !app.zeroleakage.mobile.vpn.OtherVpnWatcher.anyVpnActive(context)) {
+            shield.start()
+        }
+    }
+
     // A tap on "Turn shield on" in a notification lands here.
     LaunchedEffect(resume) {
         if (resume) {
@@ -384,11 +444,33 @@ fun DashboardNotices(shield: ShieldController) {
                 ZeroLeakage.say("Lite mode: pick a filtering DNS below; it works with WireGuard")
             }
         }
-        val approved = rules.values.count { it.approved }
-        if (mode == ProtectionMode.STRICT && approved < 3 && "strict_setup" !in tips) {
+        val guardAlerts by app.zeroleakage.mobile.data.Guard.alerts.collectAsStateWithLifecycle()
+        guardAlerts.firstOrNull()?.takeIf { System.currentTimeMillis() - it.time < 24 * 3_600_000L && "guard_${it.time}" !in tips }?.let { a ->
+            Notice("Guard: ${a.scenario} in ${a.app}. ${a.detail}", Zl.Crimson, action = if (a.pkg != null) "Cut off ${a.app}" else null) {
+                a.pkg?.let { p -> ZeroLeakage.updateRule(p) { it.copy(wifi = false, mobile = false, approved = false, pinned = false) } }
+                ZeroLeakage.dismissTip("guard_${a.time}")
+                ZeroLeakage.say("${a.app} cut off from the network")
+            }
+            SmallAction("Dismiss", Zl.TextMuted) { ZeroLeakage.dismissTip("guard_${a.time}") }
+        }
+        if (running && alwaysOn && "always_on" !in tips) {
             Notice(
-                "Strict Guard asks before every app goes online, so at first a lot gets blocked. Approve the apps you use every day " +
-                    "(Chrome, Google, YouTube, Gmail, Maps, Play Store, WhatsApp…) and it will only ask about new or unknown apps.",
+                "ZeroLeakage is set as Android's Always-on VPN, so Android won't let other VPNs (like WireGuard) start. " +
+                    "To switch between them, turn Always-on off for ZeroLeakage, then use \"Pause for VPN\": the shield comes back " +
+                    "on its own when your other VPN disconnects.",
+                Zl.Amber, action = "Open VPN settings",
+            ) {
+                runCatching { context.startActivity(android.content.Intent(android.provider.Settings.ACTION_VPN_SETTINGS).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                ZeroLeakage.say("Tap ⚙ next to ZeroLeakage and switch off Always-on VPN")
+            }
+            SmallAction("Keep Always-on", Zl.TextMuted) { ZeroLeakage.dismissTip("always_on") }
+        }
+        val approved = rules.values.count { it.approved }
+        if (mode != ProtectionMode.BALANCED && approved < 3 && "strict_setup" !in tips) {
+            Notice(
+                (if (mode == ProtectionMode.STRICT) "Strict Guard asks before every app goes online" else "Total Zero-Leak blocks every app you haven't allowed") +
+                    ", so at first a lot gets blocked. Allow the apps you use every day (Chrome, Google, YouTube, Gmail, Maps, Play Store, WhatsApp…). " +
+                    "The same allowed list works in both modes.",
                 Zl.Violet, action = "Approve popular apps",
             ) {
                 val installed = installedLaunchable(context)
@@ -405,8 +487,8 @@ fun DashboardNotices(shield: ShieldController) {
         }
         if (running && "hide_notification" !in tips) {
             Notice(
-                "Android shows a notification whenever any VPN is on. ZeroLeakage keeps it silent and minimised; you can hide it completely and the shield keeps running.",
-                Zl.TextSecondary, action = "Hide the notification",
+                "Android shows a \"running\" notification whenever any VPN is on. You can hide just that one; prompts and alerts keep working, and so does the shield.",
+                Zl.TextSecondary, action = "Hide only the running notice",
             ) {
                 val i = android.content.Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
                     .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
@@ -414,7 +496,7 @@ fun DashboardNotices(shield: ShieldController) {
                     .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                 runCatching { context.startActivity(i) }
                 ZeroLeakage.dismissTip("hide_notification")
-                ZeroLeakage.say("Turn off \"Shield status (quiet)\"")
+                ZeroLeakage.say("Switch off \"Running status\" only")
             }
         }
     }

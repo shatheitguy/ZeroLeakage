@@ -75,23 +75,38 @@ class ZeroLeakVpnService : VpnService() {
             ContextCompat.startForegroundService(context, Intent(context, ZeroLeakVpnService::class.java).setAction(ACTION_START))
         }
 
-        fun stop(context: Context) {
+        /** @param userStop you turned it off (vs. pausing for another VPN): used to tell the two apart. */
+        fun stop(context: Context, userStop: Boolean = true) {
+            if (userStop) ZeroLeakage.lastUserStopAt = System.currentTimeMillis()
             context.startService(Intent(context, ZeroLeakVpnService::class.java).setAction(ACTION_STOP))
         }
 
+        const val GROUP_STATUS = "status"
+        const val GROUP_IMPORTANT = "important"
+
+        /** True after you swipe the running-status notification away: it isn't re-posted until the shield restarts. */
+        @Volatile var statusHiddenBySwipe = false
+
         fun ensureChannels(context: Context) {
             val nm = context.getSystemService(NotificationManager::class.java)
-            nm.createNotificationChannel(NotificationChannel(CHANNEL_SHIELD, "Shield status (detailed)", NotificationManager.IMPORTANCE_LOW).apply {
-                setShowBadge(false)
-            })
-            nm.createNotificationChannel(NotificationChannel(CHANNEL_QUIET, "Shield status (quiet)", NotificationManager.IMPORTANCE_MIN).apply {
-                description = "Android requires a notification while the shield runs. This one is silent and minimised; you can turn it off here."
+            nm.createNotificationChannelGroup(android.app.NotificationChannelGroup(GROUP_STATUS, "Running status (safe to turn off)"))
+            nm.createNotificationChannelGroup(android.app.NotificationChannelGroup(GROUP_IMPORTANT, "Prompts & alerts (keep on)"))
+            nm.createNotificationChannel(NotificationChannel(CHANNEL_QUIET, "Running status", NotificationManager.IMPORTANCE_MIN).apply {
+                description = "Only the \"ZeroLeakage is running\" notice. Turn this off to hide it: the shield keeps running " +
+                    "and your other ZeroLeakage notifications (Ask to connect, alerts) still work."
+                group = GROUP_STATUS
                 setShowBadge(false)
                 setSound(null, null)
                 enableVibration(false)
             })
+            nm.createNotificationChannel(NotificationChannel(CHANNEL_SHIELD, "Running status (detailed)", NotificationManager.IMPORTANCE_LOW).apply {
+                description = "The detailed version of the running notice, with a Stop button. Safe to turn off."
+                group = GROUP_STATUS
+                setShowBadge(false)
+            })
             nm.createNotificationChannel(NotificationChannel(CHANNEL_PROMPT, "Ask to connect", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "Strict Guard asks before an unapproved app can use the network"
+                description = "Strict Guard asks before an unapproved app goes online. Keep this on, or new apps stay blocked silently."
+                group = GROUP_IMPORTANT
             })
         }
     }
@@ -126,6 +141,7 @@ class ZeroLeakVpnService : VpnService() {
     }
 
     private fun startInForeground() {
+        statusHiddenBySwipe = false
         val n = buildStatusNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
@@ -158,7 +174,11 @@ class ZeroLeakVpnService : VpnService() {
         running = true
         scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         ZeroLeakage.setVpnRunning(true)
+        // Always-on VPN stops every other VPN app from starting: remember it so the app can explain.
+        ZeroLeakage.setAlwaysOn(runCatching { isAlwaysOn }.getOrDefault(false))
+        OtherVpnWatcher.cancel(this)
         Filters.autoUpdate()
+        app.zeroleakage.mobile.data.Guard.refreshIfStale()
 
         // Changing resolver or mode invalidates cached answers / temporary allowances.
         scope.launch {
@@ -209,6 +229,7 @@ class ZeroLeakVpnService : VpnService() {
         var error: String? = null
         var upstreamInfo: DnsResponseInfo? = null
         var usedResolver: Upstream.Answer? = null
+        var guardNote: String? = null
 
         var response: ByteArray = if (decision.verdict != Verdict.ALLOWED) {
             DnsPacket.errorResponse(q, rcode = 3)
@@ -237,7 +258,15 @@ class ZeroLeakVpnService : VpnService() {
         if (decision.verdict == Verdict.ALLOWED && error == null) {
             upstreamInfo = DnsMessage.parseResponse(response)
             dnssec = if (wantDnssec) DnsMessage.dnssecStatus(upstreamInfo) else DnssecStatus.OFF
+            // Guard: never connect an app to an address on a threat list (botnet C2, malware hosts).
+            val threat = upstreamInfo?.answers?.firstNotNullOfOrNull { a -> app.zeroleakage.mobile.data.Guard.threatFor(a.address)?.let { a to it } }
             when {
+                threat != null -> {
+                    verdict = Verdict.BLOCKED
+                    category = "Malicious IP"
+                    guardNote = "${threat.first.data} is on ${threat.second}"
+                    response = DnsPacket.errorResponse(q, rcode = 3)
+                }
                 dnssec == DnssecStatus.BOGUS -> { verdict = Verdict.BLOCKED; category = "DNSSEC Failed" }
                 dnssec == DnssecStatus.INSECURE && ZeroLeakage.dnssecStrict.value &&
                     upstreamInfo?.rcode == 0 && upstreamInfo.answers.isNotEmpty() -> {
@@ -254,7 +283,7 @@ class ZeroLeakVpnService : VpnService() {
         }
 
         // upstreamInfo describes what the resolver sent; re-parse only if we replaced the answer.
-        val info = if (upstreamInfo != null && category != "DNSSEC Unsigned") upstreamInfo else DnsMessage.parseResponse(response)
+        val info = if (upstreamInfo != null && category != "DNSSEC Unsigned" && category != "Malicious IP") upstreamInfo else DnsMessage.parseResponse(response)
         val detail = PacketDetail(
             uid = uid,
             network = networkName(),
@@ -264,7 +293,8 @@ class ZeroLeakVpnService : VpnService() {
             queryFlags = DnsMessage.headerFlags(q.dns).toString(),
             queryEdns = DnsMessage.queryEdns(q.dns, q.questionEnd)?.let { "UDP ${it.udpSize} · v${it.version}" + if (it.dnssecOk) " · DO" else "" },
             querySize = q.dns.size,
-            ruleList = decision.match?.listName, rule = decision.match?.rule, ruleMatched = decision.match?.matched,
+            ruleList = if (guardNote != null) "Guard threat list" else decision.match?.listName,
+            rule = guardNote ?: decision.match?.rule, ruleMatched = decision.match?.matched,
             resolverName = if (decision.verdict == Verdict.ALLOWED) usedResolver?.resolverName ?: resolver.name else null,
             resolverUrl = if (decision.verdict == Verdict.ALLOWED) usedResolver?.resolverUrl ?: resolver.url else null,
             dnssecRequested = wantDnssec && decision.verdict == Verdict.ALLOWED && !cached,
@@ -281,7 +311,12 @@ class ZeroLeakVpnService : VpnService() {
             queryBytes = q.dns.copyOf(minOf(q.dns.size, 512)),
             responseBytes = response.copyOf(minOf(response.size, 1024)),
         )
-        ZeroLeakage.record(verdict, label, pkg, q.name, category, byFilter = decision.match != null, detail = detail)
+        ZeroLeakage.record(verdict, label, pkg, q.name, category, byFilter = decision.match != null || category == "Malicious IP", detail = detail)
+        app.zeroleakage.mobile.data.Guard.observe(
+            pkg, label, q.name,
+            upstreamNx = decision.verdict == Verdict.ALLOWED && upstreamInfo?.rcode == 3,
+            malware = category == "Malware" || category == "Malicious IP",
+        )
     }
 
     private data class Decision(
@@ -303,8 +338,11 @@ class ZeroLeakVpnService : VpnService() {
             val allowedOnNetwork = if (onWifi()) rule.wifi else rule.mobile
             if (!allowedOnNetwork) return Decision(Verdict.BLOCKED, "App Network Killed")
             when (mode) {
+                // Apps you've allowed (in Strict Guard, a prompt or the Firewall) work here too;
+                // everything else is blocked silently, with no prompts.
                 ProtectionMode.LOCKDOWN ->
-                    if (!rule.pinned) return Decision(Verdict.BLOCKED, "Total Lockdown")
+                    if (!rule.approved && !rule.pinned && pkg !in ZeroLeakage.allowedOnce)
+                        return Decision(Verdict.BLOCKED, "Total Lockdown")
                 ProtectionMode.STRICT ->
                     if (!isCore && !userAllowed && !rule.approved && pkg !in ZeroLeakage.allowedOnce)
                         return Decision(Verdict.PROMPT, "Ask to Connect", prompt = true)
@@ -313,10 +351,14 @@ class ZeroLeakVpnService : VpnService() {
         } else if (mode == ProtectionMode.LOCKDOWN) {
             return Decision(Verdict.BLOCKED, "Total Lockdown")
         }
+        val rule = pkg?.let { ZeroLeakage.rule(it) }
         val okCategory = when {
             match != null -> "Allowlisted · DoH"          // an @@ exception or your allowlist
             mode == ProtectionMode.BALANCED -> "Encrypted DoH"
-            else -> "Approved · DoH"
+            pkg != null && pkg in ZeroLeakage.allowedOnce && rule?.isAllowed != true -> "Allowed once"
+            rule?.isAllowed == true -> "Allowed by you"
+            isCore -> "Android system"
+            else -> "Encrypted DoH"
         }
         // keep the allow match so the inspector can show which exception let it through
         return Decision(Verdict.ALLOWED, okCategory, match = match)
@@ -408,13 +450,15 @@ class ZeroLeakVpnService : VpnService() {
                         .putExtra(android.provider.Settings.EXTRA_CHANNEL_ID, if (quiet) CHANNEL_QUIET else CHANNEL_SHIELD)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                     PendingIntent.FLAG_IMMUTABLE)
-                addAction(0, "Hide this notification", hide)
+                addAction(0, "Hide running status", hide)
+                setDeleteIntent(PendingIntent.getBroadcast(this@ZeroLeakVpnService, 4,
+                    Intent(this@ZeroLeakVpnService, StatusDismissedReceiver::class.java), PendingIntent.FLAG_IMMUTABLE))
             }
             .build()
     }
 
     private fun refreshNotification() {
-        if (running) getSystemService(NotificationManager::class.java).notify(NOTIF_ID, buildStatusNotification())
+        if (running && !statusHiddenBySwipe) getSystemService(NotificationManager::class.java).notify(NOTIF_ID, buildStatusNotification())
     }
 
     private fun shutdown() {
@@ -427,6 +471,7 @@ class ZeroLeakVpnService : VpnService() {
         ZeroLeakage.setVpnRunning(false)
         ZeroLeakage.pendingPrompts.clear()
         ZeroLeakage.persistStats()
+        app.zeroleakage.mobile.data.FeedHistory.flush()
         stopForeground(STOP_FOREGROUND_REMOVE)
     }
 

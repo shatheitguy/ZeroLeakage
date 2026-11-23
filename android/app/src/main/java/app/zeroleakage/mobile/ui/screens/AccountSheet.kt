@@ -49,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.zeroleakage.mobile.data.ServerLink
 import app.zeroleakage.mobile.data.Updates
 import app.zeroleakage.mobile.data.ZeroLeakage
 import app.zeroleakage.mobile.filters.Filters
@@ -80,7 +81,7 @@ fun ProfileButton(accent: Color, onClick: () -> Unit) {
     }
 }
 
-enum class AccountDestination { SETTINGS, ABOUT, XRAY, UPDATE }
+enum class AccountDestination { SETTINGS, ABOUT, XRAY, UPDATE, SYNC }
 
 /** Profile menu: account (optional), privacy X-ray, settings, about, updates. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -100,13 +101,21 @@ fun AccountSheet(onDismiss: () -> Unit, onNavigate: (AccountDestination) -> Unit
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Local profile", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                    Text("Not signed in · your rules stay on this phone", fontSize = 12.sp, color = Zl.TextMuted)
+                    val linked by ServerLink.link.collectAsStateWithLifecycle()
+                    Text(linked?.username ?: linked?.deviceName ?: "Local profile", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                    Text(linked?.let { "Synced with ${it.serverName}" } ?: "Not signed in · your rules stay on this phone",
+                        fontSize = 12.sp, color = Zl.TextMuted)
                 }
             }
             Spacer(Modifier.height(16.dp))
 
-            MenuItem(Icons.Filled.Share, "Account & sync", "Optional: link your devices through your own ZeroLeakage server", badge = "SOON", enabled = false) {}
+            val link by ServerLink.link.collectAsStateWithLifecycle()
+            MenuItem(
+                Icons.Filled.Share, "Account & sync",
+                link?.let { "Linked to ${it.serverName}" + (it.username?.let { u -> " as $u" } ?: "") }
+                    ?: "Optional: link this phone to your ZeroLeakage server",
+                badge = if (link != null) "LINKED" else null,
+            ) { onNavigate(AccountDestination.SYNC) }
             MenuItem(Icons.Filled.Warning, "Privacy X-ray", "Which apps can read your screen, chats, notifications or hear you") {
                 onNavigate(AccountDestination.XRAY)
             }

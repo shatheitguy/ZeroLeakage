@@ -100,6 +100,11 @@ public sealed class BlocklistSource : ObservableObject
     public bool HasHomepage => Homepage is not null;
 
     public bool IsEnabled { get => _isEnabled; set => SetProperty(ref _isEnabled, value); }
+
+    private bool _isLocked;
+    /// <summary>Set by the admin of the linked ZeroLeakage Server: can't be switched off or removed here.</summary>
+    public bool IsLocked { get => _isLocked; set { if (SetProperty(ref _isLocked, value)) OnPropertyChanged(nameof(CanToggle)); } }
+    public bool CanToggle => !_isLocked;
     public int RuleCount { get => _ruleCount; set { if (SetProperty(ref _ruleCount, value)) Changed(); } }
     public DateTime? UpdatedAt { get => _updatedAt; set { if (SetProperty(ref _updatedAt, value)) Changed(); } }
     public long Bytes { get => _bytes; set { if (SetProperty(ref _bytes, value)) Changed(); } }

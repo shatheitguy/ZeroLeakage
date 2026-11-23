@@ -15,36 +15,37 @@
   }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--canvas); color:var(--text); font:14px/1.5 var(--ui); -webkit-font-smoothing:antialiased; }
-  button, input, select { font:inherit; color:inherit; }
+  button, input, select, textarea { font:inherit; color:inherit; }
   .mono { font-family:var(--mono); }
   .muted { color:var(--muted); } .t2 { color:var(--text2); }
   .ov { font:600 11px var(--mono); letter-spacing:.14em; text-transform:uppercase; color:var(--muted); }
   .hidden { display:none !important; }
 
-  /* layout */
   .app { display:grid; grid-template-columns:220px 1fr; min-height:100vh; }
-  aside { border-right:1px solid var(--border); padding:18px 12px; position:sticky; top:0; height:100vh; display:flex; flex-direction:column; gap:4px; }
+  aside { border-right:1px solid var(--border); padding:18px 12px; position:sticky; top:0; height:100vh; display:flex; flex-direction:column; gap:4px; overflow-y:auto; }
   .brand { display:flex; align-items:center; gap:10px; font-weight:600; font-size:16px; padding:4px 8px 18px; }
   .brand span { color:var(--text2); font-weight:400; }
-  nav button { all:unset; cursor:pointer; display:flex; gap:10px; align-items:center; padding:9px 12px; border-radius:10px; color:var(--text2); }
+  nav button { all:unset; cursor:pointer; display:flex; gap:10px; align-items:center; padding:7px 12px; border-radius:10px; color:var(--text2); }
   nav button:hover { background:var(--card); color:var(--text); }
   nav button.on { background:color-mix(in srgb,var(--mint) 12%,transparent); color:var(--mint); }
   nav button:focus-visible { outline:2px solid var(--mint); }
+  nav .grp { font:600 10px var(--mono); letter-spacing:.14em; text-transform:uppercase; color:var(--muted); padding:12px 12px 4px; }
   .side-foot { margin-top:auto; padding:10px 8px; font-size:12px; }
-  main { padding:24px 28px 60px; max-width:1180px; }
+  main { padding:24px 28px 60px; max-width:1180px; min-width:0; }
   h1 { font-size:24px; letter-spacing:-.02em; margin:0 0 4px; }
   .sub { color:var(--text2); margin:0 0 20px; }
   @media (max-width: 820px) {
     .app { grid-template-columns:1fr; }
     aside { position:static; height:auto; flex-direction:row; flex-wrap:wrap; border-right:0; border-bottom:1px solid var(--border); }
+    nav { display:flex; flex-wrap:wrap; gap:2px; } nav .grp { display:none; }
     .brand { padding:4px 8px; width:100%; } .side-foot { display:none; }
     main { padding:18px 16px 60px; }
   }
 
   .card { background:linear-gradient(180deg,var(--card2),var(--card)); border:1px solid var(--border); border-radius:16px; padding:18px; }
   .grid { display:grid; gap:14px; }
-  .g4 { grid-template-columns:repeat(4,1fr); } .g2 { grid-template-columns:1fr 1fr; }
-  @media (max-width: 980px) { .g4 { grid-template-columns:1fr 1fr; } .g2 { grid-template-columns:1fr; } }
+  .g4 { grid-template-columns:repeat(4,1fr); } .g2 { grid-template-columns:1fr 1fr; } .g3 { grid-template-columns:repeat(3,1fr); }
+  @media (max-width: 980px) { .g4 { grid-template-columns:1fr 1fr; } .g2, .g3 { grid-template-columns:1fr; } }
   .metric .v { font:700 30px/1.1 var(--mono); margin-top:6px; }
   .metric .c { color:var(--text2); font-size:12px; margin-top:4px; }
 
@@ -54,10 +55,11 @@
   .btn.danger { color:var(--crimson); border-color:color-mix(in srgb,var(--crimson) 40%,transparent); }
   .btn.sm { padding:4px 10px; font-size:12px; border-radius:8px; }
   .btn:disabled { opacity:.5; cursor:default; }
-  input[type=text], input[type=password], input[type=number], select {
+  input[type=text], input[type=password], input[type=number], input[type=time], select, textarea {
     background:var(--inset); border:1px solid var(--border); border-radius:10px; padding:9px 12px; outline:none; width:100%;
   }
-  input:focus, select:focus { border-color:var(--mint); }
+  textarea { min-height:70px; font-family:var(--mono); font-size:12.5px; }
+  input:focus, select:focus, textarea:focus { border-color:var(--mint); }
   label.f { display:block; margin-bottom:12px; } label.f > span { display:block; font-size:12px; color:var(--text2); margin-bottom:4px; }
   .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   .grow { flex:1; min-width:160px; }
@@ -67,35 +69,42 @@
   td { padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:middle; }
   tr:hover td { background:color-mix(in srgb,var(--card2) 60%,transparent); }
   .tbl-wrap { overflow-x:auto; }
-  .badge { display:inline-block; font:600 10.5px var(--mono); padding:2px 8px; border-radius:999px; border:1px solid; letter-spacing:.04em; }
+  .badge { display:inline-block; font:600 10.5px var(--mono); padding:2px 8px; border-radius:999px; border:1px solid; letter-spacing:.04em; white-space:nowrap; }
   .b-block { color:var(--crimson); border-color:color-mix(in srgb,var(--crimson) 45%,transparent); background:color-mix(in srgb,var(--crimson) 10%,transparent); }
   .b-ok { color:var(--mint); border-color:color-mix(in srgb,var(--mint) 45%,transparent); background:color-mix(in srgb,var(--mint) 8%,transparent); }
   .b-v { color:var(--violet); border-color:color-mix(in srgb,var(--violet) 45%,transparent); }
+  .b-a { color:var(--amber); border-color:color-mix(in srgb,var(--amber) 45%,transparent); }
 
-  .switch { position:relative; width:38px; height:22px; flex:none; }
+  .switch { position:relative; width:38px; height:22px; flex:none; display:inline-block; }
   .switch input { opacity:0; width:0; height:0; }
   .switch i { position:absolute; inset:0; border-radius:999px; background:#1A1F2C; border:1px solid var(--border2); transition:.2s; cursor:pointer; }
   .switch i::after { content:""; position:absolute; width:16px; height:16px; left:2px; top:2px; border-radius:50%; background:var(--text2); transition:.2s; }
   .switch input:checked + i { background:var(--mint); border-color:var(--mint); }
   .switch input:checked + i::after { left:18px; background:var(--canvas); }
+  .switch input:disabled + i { opacity:.55; cursor:not-allowed; }
   .switch input:focus-visible + i { outline:2px solid var(--mint); outline-offset:2px; }
 
   .list-item { display:flex; gap:12px; align-items:center; padding:12px; border:1px solid var(--border); border-radius:12px; background:var(--inset); margin-bottom:8px; }
   .list-item .name { font-weight:600; }
   .list-item .desc { color:var(--text2); font-size:12.5px; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:8px; }
+  .tiles .list-item { margin:0; }
   .chart { width:100%; height:160px; }
-  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--card2); border:1px solid var(--border2); border-radius:12px; padding:10px 16px; box-shadow:0 10px 30px #0008; z-index:20; }
+  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--card2); border:1px solid var(--border2); border-radius:12px; padding:10px 16px; box-shadow:0 10px 30px #0008; z-index:20; max-width:90vw; }
   .center { min-height:100vh; display:grid; place-items:center; padding:16px; }
   .auth { width:min(380px,100%); }
   .code { font:12px var(--mono); background:var(--inset); border:1px solid var(--border); border-radius:10px; padding:10px 12px; word-break:break-all; }
+  .bigcode { font:700 28px var(--mono); letter-spacing:.12em; color:var(--mint); }
   .err { color:var(--crimson); font-size:12.5px; min-height:18px; }
   .top-list div { display:flex; justify-content:space-between; gap:10px; padding:5px 0; border-bottom:1px dashed var(--border); font-size:13px; }
   .top-list div span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--mono); }
+  .days label { display:inline-flex; gap:4px; align-items:center; margin-right:10px; font-size:13px; }
+  .chips label { display:inline-flex; gap:5px; align-items:center; margin:0 10px 6px 0; font-size:12.5px; }
+  .scopebar { margin-bottom:14px; }
 </style>
 </head>
 <body>
 
-<!-- ═════ Sign in / first-run setup ═════ -->
 <div id="auth" class="center hidden">
   <div class="auth card">
     <div class="brand" style="padding:0 0 8px"><span id="logo1"></span>Zero<span>Leakage</span></div>
@@ -111,28 +120,38 @@
   </div>
 </div>
 
-<!-- ═════ App ═════ -->
 <div id="app" class="app hidden">
   <aside>
     <div class="brand"><span id="logo2"></span>Zero<span>Leakage</span></div>
     <nav id="nav">
       <button data-p="overview" class="on">◎ Overview</button>
       <button data-p="log">≡ Query log</button>
-      <button data-p="lists" data-admin>▤ Filter lists</button>
-      <button data-p="rules">✓ Allow &amp; block</button>
+      <button data-p="reports">▥ Reports</button>
+      <div class="grp">Devices</div>
       <button data-p="devices">▣ Devices</button>
+      <button data-p="clients" data-admin>⌖ Clients</button>
+      <button data-p="users" data-admin>☺ Users</button>
+      <div class="grp">Policy</div>
+      <button data-p="services">⊘ Services</button>
+      <button data-p="categories">◧ Categories</button>
+      <button data-p="safesearch">⌕ SafeSearch</button>
+      <button data-p="schedules">◷ Schedules</button>
+      <button data-p="rules">✓ Allow &amp; block</button>
+      <button data-p="lists" data-admin>▤ Filter lists</button>
+      <button data-p="rewrites" data-admin>⇄ Local records</button>
+      <div class="grp">Security</div>
+      <button data-p="guard" data-admin>⛨ Guard</button>
       <button data-p="setup">⚙ Settings</button>
     </nav>
     <div class="side-foot"><div class="mono t2" id="whoami"></div><button class="btn sm" id="logout" style="margin-top:8px">Sign out</button><div class="muted mono" id="ver" style="margin-top:10px"></div></div>
   </aside>
   <main>
-    <!-- Overview -->
     <section data-page="overview">
-      <h1>Overview</h1><p class="sub">Last 24 hours across every device using this server.</p>
+      <h1>Overview</h1><p class="sub" id="ov-sub">Last 24 hours across every device using this server.</p>
       <div class="grid g4">
         <div class="card metric"><div class="ov">Queries</div><div class="v" id="m-total">–</div><div class="c">DNS lookups answered</div></div>
         <div class="card metric"><div class="ov">Blocked</div><div class="v" id="m-blocked" style="color:var(--crimson)">–</div><div class="c" id="m-pct">–</div></div>
-        <div class="card metric"><div class="ov">Filter rules</div><div class="v" id="m-rules" style="color:var(--violet)">–</div><div class="c">across enabled lists</div></div>
+        <div class="card metric"><div class="ov">Filter rules</div><div class="v" id="m-rules" style="color:var(--violet)">–</div><div class="c">across lists in use</div></div>
         <div class="card metric"><div class="ov">Since start</div><div class="v" id="m-live">–</div><div class="c" id="m-live2">–</div></div>
       </div>
       <div class="card" style="margin-top:14px"><div class="row"><div class="ov grow">Queries per hour</div><span class="badge b-ok">allowed</span><span class="badge b-block">blocked</span></div><svg class="chart" id="chart" role="img" aria-label="Queries per hour"></svg></div>
@@ -142,12 +161,11 @@
       </div>
       <div class="card" style="margin-top:14px">
         <div class="ov" style="margin-bottom:8px">Check a domain</div>
-        <form class="row" id="check-form"><input class="grow" type="text" id="check-d" placeholder="ads.example.com" /><button class="btn">Check</button></form>
+        <form class="row" id="check-form"><input class="grow" type="text" id="check-d" placeholder="ads.example.com" /><select id="check-dev" style="width:auto"></select><button class="btn">Check</button></form>
         <div id="check-out" class="t2" style="margin-top:10px"></div>
       </div>
     </section>
 
-    <!-- Query log -->
     <section data-page="log" class="hidden">
       <h1>Query log</h1><p class="sub">Every lookup, newest first. Allow or block a domain straight from here.</p>
       <div class="card">
@@ -162,36 +180,39 @@
       </div>
     </section>
 
-    <!-- Lists -->
-    <section data-page="lists" class="hidden">
-      <h1>Filter lists</h1><p class="sub">AdGuard-style blocklists, refreshed every day. <span id="lists-total"></span></p>
-      <div class="row" style="margin-bottom:12px"><button class="btn" id="lists-refresh">Update all now</button></div>
-      <div id="lists"></div>
-      <div class="card" style="margin-top:14px">
-        <div class="ov" style="margin-bottom:8px">Add a list by URL</div>
-        <form class="row" id="custom-form"><input class="grow" type="text" id="custom-name" placeholder="Name" /><input class="grow" type="text" id="custom-url" placeholder="https://example.com/list.txt" /><button class="btn">Add</button></form>
+    <section data-page="reports" class="hidden">
+      <h1>Reports</h1><p class="sub">What each device talks to: services, categories, blocked domains and Guard alerts.</p>
+      <div class="row scopebar"><select id="rep-dev" style="width:auto"></select><select id="rep-hours" style="width:auto"><option value="24">Last 24 hours</option><option value="168">Last 7 days</option><option value="720">Last 30 days</option></select></div>
+      <div class="grid g3">
+        <div class="card metric"><div class="ov">Queries</div><div class="v" id="rep-total">–</div></div>
+        <div class="card metric"><div class="ov">Blocked</div><div class="v" id="rep-blocked" style="color:var(--crimson)">–</div><div class="c" id="rep-pct"></div></div>
+        <div class="card metric"><div class="ov">Guard alerts</div><div class="v" id="rep-alerts" style="color:var(--amber)">–</div></div>
+      </div>
+      <div class="card" style="margin-top:14px"><div class="ov" id="rep-tl-title">Timeline</div><svg class="chart" id="rep-chart" role="img" aria-label="Timeline"></svg></div>
+      <div class="grid g2" style="margin-top:14px">
+        <div class="card"><div class="ov" style="margin-bottom:8px">Top services</div><div class="top-list" id="rep-svc"></div></div>
+        <div class="card"><div class="ov" style="margin-bottom:8px">Top categories</div><div class="top-list" id="rep-cat"></div></div>
+        <div class="card"><div class="ov" style="margin-bottom:8px">Top blocked domains</div><div class="top-list" id="rep-blk"></div></div>
+        <div class="card"><div class="ov" style="margin-bottom:8px">Why things were blocked</div><div class="top-list" id="rep-why"></div></div>
+        <div class="card"><div class="ov" style="margin-bottom:8px">Top clients</div><div class="top-list" id="rep-cli"></div></div>
+        <div class="card"><div class="ov" style="margin-bottom:8px">Guard alerts</div><div id="rep-al"></div></div>
       </div>
     </section>
 
-    <!-- Rules -->
-    <section data-page="rules" class="hidden">
-      <h1>Allow &amp; block</h1><p class="sub">Your own rules beat every list. Each one covers the domain and all its subdomains.</p>
-      <div class="row" style="margin-bottom:12px"><span class="t2">Applies to</span><select id="rules-scope" style="width:auto"></select></div>
-      <div class="grid g2">
-        <div class="card"><div class="ov" style="margin-bottom:8px;color:var(--mint)">Allowlist</div>
-          <form class="row" data-kind="allow"><input class="grow" type="text" placeholder="domain.com" /><button class="btn">Allow</button></form><div id="rules-allow" style="margin-top:10px"></div></div>
-        <div class="card"><div class="ov" style="margin-bottom:8px;color:var(--crimson)">Blocklist</div>
-          <form class="row" data-kind="block"><input class="grow" type="text" placeholder="domain.com" /><button class="btn">Block</button></form><div id="rules-block" style="margin-top:10px"></div></div>
-      </div>
-    </section>
-
-    <!-- Devices -->
     <section data-page="devices" class="hidden">
       <h1>Devices</h1><p class="sub">Name your LAN devices by IP, or link phones and PCs running the ZeroLeakage app so they're protected on mobile data too.</p>
-      <div class="card" style="margin-bottom:14px">
-        <div class="ov" style="margin-bottom:8px">Add a device</div>
-        <form class="row" id="dev-form"><input class="grow" type="text" id="dev-name" placeholder="Name (e.g. Living-room TV)" required /><input class="grow" type="text" id="dev-ips" placeholder="LAN IPs or CIDR, comma-separated (optional)" data-admin /><button class="btn">Add</button></form>
-        <p class="muted" style="font-size:12px;margin:8px 0 0">Leave IPs empty for a phone or laptop: it gets its own DoH URL and Private DNS hostname.</p>
+      <div class="grid g2" style="margin-bottom:14px">
+        <div class="card">
+          <div class="ov" style="margin-bottom:8px">Add a device</div>
+          <form class="row" id="dev-form"><input class="grow" type="text" id="dev-name" placeholder="Name (e.g. Living-room TV)" required /><input class="grow" type="text" id="dev-ips" placeholder="LAN IPs or CIDR, comma-separated (optional)" data-admin /><button class="btn">Add</button></form>
+          <p class="muted" style="font-size:12px;margin:8px 0 0">Leave IPs empty for a phone or laptop: it gets its own DoH URL and Private DNS hostname.</p>
+        </div>
+        <div class="card">
+          <div class="ov" style="margin-bottom:8px">Pairing code</div>
+          <form class="row" id="pair-form"><input class="grow" type="text" id="pair-name" placeholder="Device name (optional)" /><button class="btn pri">Get a code</button></form>
+          <div id="pair-out" class="hidden" style="margin-top:10px"><div class="bigcode" id="pair-code"></div><div class="muted" id="pair-exp" style="font-size:12px"></div>
+            <p class="t2" style="margin:6px 0 0;font-size:12.5px">In the app: <b>Profile → Account &amp; sync → Connect to server → Pairing code</b>. One use, valid 10 minutes. No password on the phone.</p></div>
+        </div>
       </div>
       <div id="devices"></div>
       <div class="card hidden" id="link-card" style="margin-top:14px">
@@ -201,7 +222,133 @@
       </div>
     </section>
 
-    <!-- Settings -->
+    <section data-page="clients" class="hidden">
+      <h1>Clients</h1><p class="sub">Every address that used this server: discovered automatically. Host names come from your router (set it under Settings), MAC vendors from the ARP table when running with host networking.</p>
+      <div class="card"><div class="tbl-wrap"><table><thead><tr><th>Address</th><th>Name / vendor</th><th>Queries</th><th>Last seen</th><th>Device</th><th></th></tr></thead><tbody id="cl-rows"></tbody></table></div></div>
+    </section>
+
+    <section data-page="users" class="hidden">
+      <h1>Users</h1><p class="sub">Only the admin runs the server. Users sign in to link their apps; they can add protection for their own devices, never remove the network's.</p>
+      <div class="card" style="margin-bottom:14px">
+        <div class="ov" style="margin-bottom:8px">Add a user</div>
+        <form class="row" id="user-form"><input class="grow" type="text" id="nu-name" placeholder="Username" autocomplete="off" /><input class="grow" type="password" id="nu-pass" placeholder="Password (10+ characters)" autocomplete="new-password" /><label class="row" style="gap:6px"><input type="checkbox" id="nu-admin" /> admin</label><button class="btn">Add</button></form>
+      </div>
+      <div class="card"><div class="tbl-wrap"><table><thead><tr><th>User</th><th>Role</th><th>Devices</th><th>Created</th><th></th></tr></thead><tbody id="user-rows"></tbody></table></div></div>
+    </section>
+
+    <section data-page="services" class="hidden">
+      <h1>Blocked services</h1><p class="sub">One click blocks an app or site with all its domains. The log shows "Blocked service: …".</p>
+      <div class="row scopebar"><span class="t2">Policy for</span><select class="pol-scope" style="width:auto"></select><span class="t2 pol-note" style="font-size:12.5px"></span></div>
+      <div id="svc-list"></div>
+    </section>
+
+    <section data-page="categories" class="hidden">
+      <h1>Web categories</h1><p class="sub">Each category is a set of curated lists. Privacy and security categories are on by default.</p>
+      <div class="row scopebar"><span class="t2">Policy for</span><select class="pol-scope" style="width:auto"></select><span class="t2 pol-note" style="font-size:12.5px"></span></div>
+      <div id="cat-list"></div>
+    </section>
+
+    <section data-page="safesearch" class="hidden">
+      <h1>SafeSearch</h1><p class="sub">Forces the safe version of search engines and YouTube with the method each provider documents (a DNS CNAME to its restricted endpoint).</p>
+      <div class="row scopebar"><span class="t2">Policy for</span><select class="pol-scope" style="width:auto"></select><span class="t2 pol-note" style="font-size:12.5px"></span></div>
+      <div class="card" id="ss-card" style="max-width:560px"></div>
+    </section>
+
+    <section data-page="schedules" class="hidden">
+      <h1>Schedules</h1><p class="sub">Time windows (server time zone) that add blocking: bedtime blocks everything except a few sites, homework blocks chosen services.</p>
+      <div class="row scopebar"><span class="t2">Policy for</span><select class="pol-scope" style="width:auto"></select><span class="t2 pol-note" style="font-size:12.5px"></span></div>
+      <div id="sch-list"></div>
+      <div class="card" id="sch-form-card" style="margin-top:14px">
+        <div class="ov" style="margin-bottom:10px">Add a schedule</div>
+        <form id="sch-form">
+          <div class="grid g3"><label class="f"><span>Name</span><input type="text" id="sch-name" placeholder="Bedtime" /></label>
+            <label class="f"><span>From</span><input type="time" id="sch-start" value="21:00" /></label>
+            <label class="f"><span>Until (earlier = next morning)</span><input type="time" id="sch-end" value="07:00" /></label></div>
+          <div class="days" id="sch-days" style="margin-bottom:12px"></div>
+          <label class="f"><span>Action</span><select id="sch-action"><option value="block_all">Block everything except the allowlist</option><option value="block_selected">Block selected services and categories</option></select></label>
+          <div id="sch-sel" class="hidden"><div class="ov" style="margin:6px 0">Services</div><div class="chips" id="sch-svc"></div><div class="ov" style="margin:6px 0">Categories</div><div class="chips" id="sch-cat"></div></div>
+          <label class="f" id="sch-allow-l"><span>Still allowed (one domain per line, covers subdomains)</span><textarea id="sch-allow" placeholder="school.example.com"></textarea></label>
+          <button class="btn pri">Add schedule</button>
+        </form>
+      </div>
+    </section>
+
+    <section data-page="rules" class="hidden">
+      <h1>Allow &amp; block</h1><p class="sub">Each rule covers the domain and all its subdomains. Network blocks always win; your own allows can only lift your own additions.</p>
+      <div class="row" style="margin-bottom:12px"><span class="t2">Applies to</span><select id="rules-scope" style="width:auto"></select></div>
+      <div class="grid g2">
+        <div class="card"><div class="ov" style="margin-bottom:8px;color:var(--mint)">Allowlist</div>
+          <form class="row" data-kind="allow"><input class="grow" type="text" placeholder="domain.com" /><button class="btn">Allow</button></form><div id="rules-allow" style="margin-top:10px"></div></div>
+        <div class="card"><div class="ov" style="margin-bottom:8px;color:var(--crimson)">Blocklist</div>
+          <form class="row" data-kind="block"><input class="grow" type="text" placeholder="domain.com" /><button class="btn">Block</button></form><div id="rules-block" style="margin-top:10px"></div></div>
+      </div>
+    </section>
+
+    <section data-page="lists" class="hidden">
+      <h1>Filter lists</h1><p class="sub">AdGuard-style blocklists for the whole network, refreshed every day. <span id="lists-total"></span></p>
+      <div class="row" style="margin-bottom:12px"><button class="btn" id="lists-refresh">Update all now</button></div>
+      <div id="lists"></div>
+      <div class="card" style="margin-top:14px">
+        <div class="ov" style="margin-bottom:8px">Add a list by URL</div>
+        <form class="row" id="custom-form"><input class="grow" type="text" id="custom-name" placeholder="Name" /><input class="grow" type="text" id="custom-url" placeholder="https://example.com/list.txt" /><select id="custom-cat" style="width:auto"></select><button class="btn">Add</button></form>
+      </div>
+    </section>
+
+    <section data-page="rewrites" class="hidden">
+      <h1>Local records</h1><p class="sub">Answer names on your network yourself: nas.lan → 192.168.1.10, or *.home.lan for every subdomain. Never sent upstream.</p>
+      <div class="card" style="margin-bottom:14px">
+        <form class="row" id="rw-form"><input class="grow" type="text" id="rw-domain" placeholder="nas.lan or *.home.lan" /><select id="rw-type" style="width:auto"><option>A</option><option>AAAA</option><option>CNAME</option></select><input class="grow" type="text" id="rw-value" placeholder="192.168.1.10" /><button class="btn">Add</button></form>
+      </div>
+      <div class="card"><div class="tbl-wrap"><table><thead><tr><th>Name</th><th>Type</th><th>Answer</th><th></th></tr></thead><tbody id="rw-rows"></tbody></table></div></div>
+    </section>
+
+    <section data-page="guard" class="hidden">
+      <h1>Guard</h1><p class="sub">Local CrowdSec-style protection: threat-IP feeds, attack detection on DNS traffic, bans and a blocklist for your firewall. Everything runs here; nothing is reported anywhere.</p>
+      <div class="grid g4">
+        <div class="card metric"><div class="ov">Status</div><div class="v" id="g-on">–</div><div class="c" id="g-ranges"></div></div>
+        <div class="card metric"><div class="ov">Active bans</div><div class="v" id="g-bans" style="color:var(--crimson)">–</div></div>
+        <div class="card metric"><div class="ov">Alerts (7 days)</div><div class="v" id="g-alerts" style="color:var(--amber)">–</div></div>
+        <div class="card metric"><div class="ov">Bad answers blocked</div><div class="v" id="g-threat">–</div><div class="c">since start</div></div>
+      </div>
+      <div class="grid g2" style="margin-top:14px">
+        <div class="card">
+          <div class="ov" style="margin-bottom:10px">Engine</div>
+          <div class="row" style="margin-bottom:12px"><span class="grow">Guard enabled</span><label class="switch"><input type="checkbox" id="g-enabled" /><i></i></label></div>
+          <label class="f"><span>A banned LAN device…</span><select id="g-eff-lan"><option value="quarantine">is quarantined (only the allowlist and this dashboard resolve)</option><option value="refuse">gets no DNS at all (REFUSED)</option></select></label>
+          <label class="f"><span>A banned internet client (DoH/DoT)…</span><select id="g-eff-pub"><option value="refuse">gets REFUSED</option><option value="quarantine">is quarantined</option></select></label>
+          <label class="f"><span>Never ban (IPs / CIDRs, one per line). This server's own addresses and gateways are always protected.</span><textarea id="g-never"></textarea></label>
+          <p class="muted mono" style="font-size:11px;margin:-6px 0 12px" id="g-never-auto"></p>
+          <label class="f"><span>Still resolvable in quarantine (domains, one per line)</span><textarea id="g-qallow"></textarea></label>
+        </div>
+        <div class="card">
+          <div class="ov" style="margin-bottom:10px">Detectors</div>
+          <div class="tbl-wrap"><table><thead><tr><th>Scenario</th><th>On</th><th>Action</th><th>Threshold</th><th>Window s</th><th>Ban min</th></tr></thead><tbody id="g-sc"></tbody></table></div>
+          <p class="muted" style="font-size:11.5px">Flood: queries/second. NXDOMAIN: distinct non-existent names. Tunnel: distinct random-looking subdomains of one domain. Infected: malware/phishing lookups. Brute force: failed sign-ins.</p>
+          <button class="btn pri" id="g-save">Save Guard settings</button>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <div class="row" style="margin-bottom:8px"><div class="ov grow">Threat-IP feeds</div><button class="btn sm" id="g-refresh">Update now</button></div>
+        <div class="tbl-wrap"><table><thead><tr><th>Feed</th><th>Block DNS answers</th><th>Firewall export</th><th>Entries</th></tr></thead><tbody id="g-feeds"></tbody></table></div>
+        <p class="muted" style="font-size:11.5px;margin-bottom:0">DNS feeds block answers that point at known-bad addresses ("Malicious IP" in the log). Attacker feeds (scanners, brute-forcers) are meant for your firewall.</p>
+      </div>
+      <div class="grid g2" style="margin-top:14px">
+        <div class="card">
+          <div class="ov" style="margin-bottom:8px">Bans</div>
+          <form class="row" id="g-ban-form" style="margin-bottom:10px"><input class="grow" type="text" id="g-ban-ip" placeholder="IP or CIDR" /><input type="number" id="g-ban-min" placeholder="minutes (0 = forever)" style="width:150px" /><button class="btn danger">Ban</button></form>
+          <div id="g-ban-list"></div>
+        </div>
+        <div class="card">
+          <div class="ov" style="margin-bottom:8px">Bouncers (firewall blocklist)</div>
+          <form class="row" id="g-bc-form" style="margin-bottom:10px"><input class="grow" type="text" id="g-bc-name" placeholder="OPNsense, MikroTik…" /><button class="btn">Create key</button></form>
+          <div class="code hidden" id="g-bc-key" style="margin-bottom:10px"></div>
+          <div id="g-bc-list"></div>
+          <p class="muted" style="font-size:11.5px;margin-bottom:0">Fetch <span class="mono" id="g-bc-url"></span> with header <span class="mono">X-Api-Key: &lt;key&gt;</span> (or <span class="mono">?key=</span> for firewalls that only take a URL). Linked apps can use their device token.</p>
+        </div>
+      </div>
+      <div class="card" style="margin-top:14px"><div class="ov" style="margin-bottom:8px">Recent alerts</div><div id="g-al"></div></div>
+    </section>
+
     <section data-page="setup" class="hidden">
       <h1>Settings</h1><p class="sub">How this server resolves and blocks.</p>
       <div class="grid g2">
@@ -211,6 +358,8 @@
           <label class="f"><span>Custom DoH URL (when "Custom" is selected)</span><input type="text" id="s-custom" placeholder="https://dns.example/dns-query" /></label>
           <label class="f"><span>Plain DNS fallback if every DoH resolver is unreachable (e.g. your router: 192.168.1.1:53)</span><input type="text" id="s-fallback" placeholder="leave empty to never fall back" /></label>
           <label class="f"><span>Blocked answers</span><select id="s-mode"><option value="nxdomain">NXDOMAIN (domain doesn't exist)</option><option value="null_ip">0.0.0.0 / ::</option></select></label>
+          <label class="f"><span>Stop filtering bypass (public DoH/DoT resolvers, iCloud Private Relay)</span><select id="s-bypass"><option value="lan">On for LAN devices (recommended)</option><option value="all">On for everyone</option><option value="off">Off</option></select></label>
+          <label class="f"><span>Router for device names (reverse DNS, LAN only, e.g. 192.168.1.1)</span><input type="text" id="s-ptr" placeholder="leave empty to not look up names" /></label>
         </div>
         <div class="card" data-admin>
           <div class="ov" style="margin-bottom:10px">Server</div>
@@ -223,8 +372,8 @@
         <div class="card">
           <div class="ov" style="margin-bottom:10px">Connect your devices</div>
           <p class="t2" style="margin-top:0"><b>Home Wi-Fi:</b> set your router's DNS server to this machine's IP (<span class="mono" id="hint-ip"></span>). Every device on the network is filtered, no app needed.</p>
-          <p class="t2"><b>On mobile data:</b> add the phone under Devices, then use its DoH URL in the ZeroLeakage app (or its Private DNS hostname on Android). Needs the server reachable over HTTPS.</p>
-          <p class="t2" style="margin-bottom:0"><b>Sign-in is optional:</b> it only adds rule sync between your devices. Everything works without an account.</p>
+          <p class="t2"><b>On mobile data:</b> get a pairing code under Devices and enter it in the ZeroLeakage app, or use a device's DoH URL / Private DNS hostname. Needs the server reachable over HTTPS.</p>
+          <p class="t2" style="margin-bottom:0"><b>Sign-in is optional:</b> it only adds policy sync between your devices. Everything works without an account.</p>
         </div>
       </div>
     </section>
@@ -240,9 +389,11 @@
   $('#logo1').innerHTML = LOGO; $('#logo2').innerHTML = LOGO;
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const fmt = n => n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e4 ? (n/1e3).toFixed(1)+'K' : String(n ?? 0);
-  let me = null, devices = [], logBefore = 0;
+  const when = s => s ? new Date(s * 1000).toLocaleString() : '–';
+  const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  let me = null, devices = [], logBefore = 0, catalog = null, users = [];
 
-  function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.add('hidden'), 2600); }
+  function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.add('hidden'), 2800); }
   async function api(method, path, body) {
     const r = await fetch('/api/v1' + path, { method, credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'X-ZL-Request': '1' }, body: body ? JSON.stringify(body) : undefined });
@@ -252,6 +403,8 @@
     if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
     return data;
   }
+  const guarded = fn => async (...a) => { try { await fn(...a); } catch (err) { if (err.message !== 'signed out') toast(err.message); } };
+  const sw = (attrs, on, dis) => `<label class="switch"><input type="checkbox" ${attrs} ${on ? 'checked' : ''} ${dis ? 'disabled' : ''} /><i></i></label>`;
 
   // ── auth ──
   let authMode = 'login';
@@ -286,16 +439,34 @@
     $('#whoami').textContent = me.username + (me.isAdmin ? ' · admin' : '');
     $$('[data-admin]').forEach(el => el.classList.toggle('hidden', !me.isAdmin));
     $('#hint-ip').textContent = location.hostname;
+    $('#ov-sub').textContent = me.isAdmin ? 'Last 24 hours across every device using this server.' : 'Last 24 hours on your devices.';
     go('overview');
   }
 
   // ── navigation ──
+  const pages = { overview: loadOverview, log: () => { logBefore = 0; return loadLog(); }, reports: loadReports, devices: loadDevices, clients: loadClients, users: loadUsers,
+    services: () => loadPolicy('services'), categories: () => loadPolicy('categories'), safesearch: () => loadPolicy('safesearch'), schedules: () => loadPolicy('schedules'),
+    rules: loadRules, lists: loadLists, rewrites: loadRewrites, guard: loadGuard, setup: loadSettings };
+  let page = 'overview';
   function go(p) {
+    page = p;
     $$('#nav button').forEach(b => b.classList.toggle('on', b.dataset.p === p));
     $$('section[data-page]').forEach(s => s.classList.toggle('hidden', s.dataset.page !== p));
-    ({ overview: loadOverview, log: () => { logBefore = 0; loadLog(); }, lists: loadLists, rules: loadRules, devices: loadDevices, setup: loadSettings })[p]?.();
+    guarded(pages[p] || (() => {}))();
   }
   $('#nav').addEventListener('click', e => { const b = e.target.closest('button'); if (b) go(b.dataset.p); });
+
+  async function deviceNames() {
+    try { devices = await api('GET', '/devices'); } catch { devices = []; }
+    const m = {}; devices.forEach(d => m[d.id] = d.name); return m;
+  }
+  async function loadCatalog() {
+    if (!catalog) { const [s, c] = await Promise.all([api('GET', '/services'), api('GET', '/categories')]); catalog = { services: s.services, categories: c }; }
+    return catalog;
+  }
+  const svcName = id => catalog?.services.find(s => s.id === id)?.name || id;
+  const catName = id => catalog?.categories.find(c => c.id === id)?.name || id;
+  const topRows = (rows, label, blocked) => (rows || []).map(x => `<div><span>${esc(label ? label(x.name) : x.name)}</span><span class="mono t2">${fmt(x.count)}${blocked && x.blocked ? ` <span style="color:var(--crimson)">${fmt(x.blocked)}⊘</span>` : ''}</span></div>`).join('') || '<span class="muted">Nothing yet.</span>';
 
   // ── overview ──
   async function loadOverview() {
@@ -304,40 +475,38 @@
     $('#m-total').textContent = fmt(st.total); $('#m-blocked').textContent = fmt(st.blocked);
     $('#m-pct').textContent = st.total ? (st.blocked * 100 / st.total).toFixed(1) + '% of all queries' : 'nothing yet';
     $('#m-rules').textContent = fmt(s.rules);
-    $('#m-live').textContent = fmt(s.live.queries); $('#m-live2').textContent = fmt(s.live.blocked) + ' blocked · ' + fmt(s.live.cached) + ' from cache';
+    $('#m-live').textContent = fmt(s.live.queries); $('#m-live2').textContent = fmt(s.live.blocked) + ' blocked' + (s.live.cached !== undefined ? ' · ' + fmt(s.live.cached) + ' from cache' : '');
     const names = await deviceNames();
-    $('#top-blocked').innerHTML = (st.topBlocked || []).map(x => `<div><span>${esc(x.name)}</span><span class="mono t2">${fmt(x.count)}</span></div>`).join('') || '<span class="muted">Nothing blocked yet.</span>';
-    $('#top-clients').innerHTML = (st.topClients || []).map(x => `<div><span>${esc(names[x.name] || x.name)}</span><span class="mono t2">${fmt(x.count)}</span></div>`).join('') || '<span class="muted">No clients yet.</span>';
-    drawChart(st.hourly || []);
+    $('#check-dev').innerHTML = (me.isAdmin ? '<option value="">Network default</option>' : '') + devices.map(d => `<option value="${esc(d.id)}">${esc(d.name)}</option>`).join('');
+    $('#top-blocked').innerHTML = topRows(st.topBlocked);
+    $('#top-clients').innerHTML = topRows(st.topClients, n => names[n] || n);
+    drawChart($('#chart'), (st.hourly || []).map(h => ({ ts: h.hour, total: h.total, blocked: h.blocked })), 3600000, 24);
   }
-  function drawChart(data) {
-    const svg = $('#chart'), W = svg.clientWidth || 800, H = 160, pad = 4;
+  function drawChart(svg, data, bucket, slots) {
+    const W = svg.clientWidth || 800, H = 160, pad = 4;
     if (!data.length) { svg.innerHTML = `<text x="${W/2}" y="${H/2}" fill="#5C6478" text-anchor="middle" font-size="12">No queries yet. Point a device at this server.</text>`; return; }
-    // Always 24 hourly slots ending now, so one busy hour doesn't fill the whole chart.
-    const HOUR = 3600000, now = Math.floor(Date.now() / HOUR) * HOUR, byHour = new Map(data.map(r => [r.hour, r]));
-    const rows = Array.from({ length: 24 }, (_, i) => { const h = now - (23 - i) * HOUR; return byHour.get(h) || { hour: h, total: 0, blocked: 0 }; });
+    const byTs = new Map(data.map(r => [r.ts, r]));
+    let end = data[data.length - 1].ts;
+    if (bucket === 3600000) end = Math.floor(Date.now() / bucket) * bucket;
+    const rows = Array.from({ length: slots }, (_, i) => { const t = end - (slots - 1 - i) * bucket; return byTs.get(t) || { ts: t, total: 0, blocked: 0 }; });
     const max = Math.max(...rows.map(r => r.total), 1), bw = (W - pad * 2) / rows.length;
     svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
     svg.innerHTML = rows.map((r, i) => {
       const x = pad + i * bw + 1, w = Math.max(bw - 2, 1), ht = (r.total / max) * (H - 10), hb = (r.blocked / max) * (H - 10);
-      const label = new Date(r.hour).toLocaleTimeString([], { hour: '2-digit' }) + `: ${r.total} queries, ${r.blocked} blocked`;
+      const d = new Date(r.ts), label = (bucket >= 86400000 ? d.toLocaleDateString() : d.toLocaleTimeString([], { hour: '2-digit' })) + `: ${r.total} queries, ${r.blocked} blocked`;
       return `<g><title>${esc(label)}</title><rect x="${x}" y="${H - ht}" width="${w}" height="${ht}" rx="2" fill="#00F5A0" opacity=".55"/><rect x="${x}" y="${H - hb}" width="${w}" height="${hb}" rx="2" fill="#FF2E54"/></g>`;
     }).join('');
   }
   $('#check-form').addEventListener('submit', async e => {
     e.preventDefault();
     try {
-      const r = await api('GET', '/check?domain=' + encodeURIComponent($('#check-d').value));
+      const r = await api('GET', '/check?domain=' + encodeURIComponent($('#check-d').value) + '&device=' + encodeURIComponent($('#check-dev').value));
       const d = r.decision, m = d.match;
-      $('#check-out').innerHTML = `<span class="badge ${d.blocked ? 'b-block' : 'b-ok'}">${d.blocked ? 'BLOCKED' : 'ALLOWED'}</span> <span class="mono">${esc(r.domain)}</span> · ${esc(d.reason)}` +
-        (m ? ` · rule <span class="mono">${esc(m.rule)}</span> from <b>${esc(m.listName)}</b>` : '');
+      const extra = d.local ? ' · local record' : d.safeSearch ? ` · answered with <span class="mono">${esc(d.safeSearch)}</span>` : '';
+      $('#check-out').innerHTML = `<span class="badge ${d.blocked ? 'b-block' : 'b-ok'}">${d.blocked ? 'BLOCKED' : 'ALLOWED'}</span> <span class="mono">${esc(r.domain)}</span> · ${esc(d.reason)}${extra}` +
+        (m ? ` · rule <span class="mono">${esc(m.rule)}</span> from <b>${esc(m.listName)}</b>` : '') + (d.service ? ` · service <b>${esc(d.service)}</b>` : '') + (d.category ? ` · category <b>${esc(d.category)}</b>` : '');
     } catch (err) { $('#check-out').textContent = err.message; }
   });
-
-  async function deviceNames() {
-    try { devices = await api('GET', '/devices'); } catch { devices = []; }
-    const m = {}; devices.forEach(d => m[d.id] = d.name); return m;
-  }
 
   // ── query log ──
   async function loadLog(append) {
@@ -355,102 +524,75 @@
     const html = rows.map(r => `<tr>
       <td class="mono t2">${new Date(r.ts).toLocaleTimeString()}</td>
       <td>${esc(names[r.deviceId] || r.client)}</td>
-      <td class="mono">${esc(r.qname)}</td><td class="mono muted">${esc(r.qtype)}</td>
-      <td>${r.blocked ? `<span class="badge b-block">BLOCKED</span> <span class="muted">${esc(r.list || r.reason)}</span>` : `<span class="badge b-ok">OK</span> <span class="muted">${esc(r.reason === 'No rule' ? '' : r.reason)}</span>`}</td>
+      <td class="mono">${esc(r.qname)}${r.service ? ` <span class="badge b-v">${esc(r.service)}</span>` : ''}</td><td class="mono muted">${esc(r.qtype)}</td>
+      <td>${r.blocked ? `<span class="badge b-block">BLOCKED</span> <span class="muted">${esc(r.reason)}${r.list && r.list !== r.reason ? ' · ' + esc(r.list) : ''}</span>` : `<span class="badge b-ok">OK</span> <span class="muted">${esc(r.reason === 'No rule' ? '' : r.reason)}</span>`}</td>
       <td class="muted">${esc(r.upstream)}${r.latencyMs ? ' · ' + r.latencyMs + ' ms' : ''}</td>
       <td>${r.blocked ? `<button class="btn sm" data-allow="${esc(r.qname)}">Allow</button>` : `<button class="btn sm danger" data-block="${esc(r.qname)}">Block</button>`}</td></tr>`).join('');
     if (append) $('#log-rows').insertAdjacentHTML('beforeend', html);
     else $('#log-rows').innerHTML = html || '<tr><td colspan="7" class="muted">No queries yet. Point a device or your router at this server.</td></tr>';
     $('#log-more').disabled = rows.length < 100;
   }
-  $('#log-refresh').addEventListener('click', () => { logBefore = 0; loadLog(); });
-  $('#log-more').addEventListener('click', () => loadLog(true));
-  ['#log-filter', '#log-device'].forEach(s => $(s).addEventListener('change', () => { logBefore = 0; loadLog(); }));
-  let searchT; $('#log-search').addEventListener('input', () => { clearTimeout(searchT); searchT = setTimeout(() => { logBefore = 0; loadLog(); }, 300); });
-  $('#log-rows').addEventListener('click', async e => {
+  $('#log-refresh').addEventListener('click', () => { logBefore = 0; guarded(loadLog)(); });
+  $('#log-more').addEventListener('click', () => guarded(loadLog)(true));
+  ['#log-filter', '#log-device'].forEach(s => $(s).addEventListener('change', () => { logBefore = 0; guarded(loadLog)(); }));
+  let searchT; $('#log-search').addEventListener('input', () => { clearTimeout(searchT); searchT = setTimeout(() => { logBefore = 0; guarded(loadLog)(); }, 300); });
+  $('#log-rows').addEventListener('click', guarded(async e => {
     const b = e.target.closest('button'); if (!b) return;
     const kind = b.dataset.allow ? 'allow' : 'block', domain = b.dataset.allow || b.dataset.block;
-    try { await api('POST', '/rules?scope=' + (me.isAdmin ? 'default' : 'user'), { kind, domain }); toast(`${domain} ${kind === 'allow' ? 'allowed' : 'blocked'}`); b.disabled = true; }
-    catch (err) { toast(err.message); }
-  });
-
-  // ── lists ──
-  async function loadLists() {
-    const r = await api('GET', '/lists');
-    $('#lists-total').textContent = fmt(r.totalRules) + ' rules active.';
-    const groups = {};
-    r.lists.forEach(l => (groups[l.group] ||= []).push(l));
-    $('#lists').innerHTML = Object.entries(groups).map(([g, ls]) => `<div class="ov" style="margin:16px 0 8px">${esc(g)}</div>` + ls.map(l => `
-      <div class="list-item">
-        <div class="grow"><div class="name">${esc(l.name)} ${l.custom ? '<span class="badge b-v">CUSTOM</span>' : ''}</div>
-          <div class="desc">${esc(l.description || l.url)}</div>
-          <div class="mono muted" style="font-size:11.5px">${l.status ? fmt(l.status.rules) + ' rules' + (l.status.updatedAt && !l.status.updatedAt.startsWith('0001') ? ' · updated ' + new Date(l.status.updatedAt).toLocaleString() : '') : (l.enabled ? 'downloading…' : 'off')}${l.status && l.status.error ? ' · <span style="color:var(--amber)">' + esc(l.status.error) + '</span>' : ''}</div></div>
-        ${l.custom ? `<button class="btn sm danger" data-del="${esc(l.id)}">Remove</button>` : ''}
-        <label class="switch" title="Enable ${esc(l.name)}"><input type="checkbox" data-list="${esc(l.id)}" ${l.enabled ? 'checked' : ''} aria-label="Enable ${esc(l.name)}" /><i></i></label>
-      </div>`).join('')).join('');
-  }
-  $('#lists').addEventListener('change', async e => {
-    if (!e.target.dataset.list) return;
-    const enabled = $$('#lists input[data-list]').filter(i => i.checked).map(i => i.dataset.list);
-    await api('PUT', '/lists', { enabled }); toast('Lists saved. Downloading and rebuilding…');
-    setTimeout(loadLists, 4000);
-  });
-  $('#lists').addEventListener('click', async e => {
-    const id = e.target.dataset?.del; if (!id) return;
-    await api('DELETE', '/lists/custom/' + id); toast('List removed'); loadLists();
-  });
-  $('#lists-refresh').addEventListener('click', async () => { await api('POST', '/lists/refresh'); toast('Updating lists…'); setTimeout(loadLists, 6000); });
-  $('#custom-form').addEventListener('submit', async e => {
-    e.preventDefault();
-    try { await api('POST', '/lists/custom', { name: $('#custom-name').value, url: $('#custom-url').value }); $('#custom-url').value = $('#custom-name').value = ''; toast('List added. Enable it above.'); loadLists(); }
-    catch (err) { toast(err.message); }
-  });
-
-  // ── rules ──
-  async function loadRules() {
-    await deviceNames();
-    const sel = $('#rules-scope'), cur = sel.value;
-    sel.innerHTML = (me.isAdmin ? '<option value="default">Whole network (default)</option>' : '') + '<option value="user">All my linked devices</option>' +
-      devices.map(d => `<option value="device:${esc(d.id)}">Only ${esc(d.name)}</option>`).join('');
-    if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
-    const r = await api('GET', '/rules?scope=' + encodeURIComponent(sel.value));
-    const rows = kind => (r.rules || []).filter(x => x.kind === kind).map(x => `<div class="list-item" style="padding:8px 12px"><span class="mono grow">${esc(x.domain)}</span><button class="btn sm" data-rm="${esc(x.domain)}" data-kind="${kind}">Remove</button></div>`).join('') || '<span class="muted">None yet.</span>';
-    $('#rules-allow').innerHTML = rows('allow'); $('#rules-block').innerHTML = rows('block');
-  }
-  $('#rules-scope').addEventListener('change', loadRules);
-  $$('form[data-kind]').forEach(f => f.addEventListener('submit', async e => {
-    e.preventDefault(); const inp = f.querySelector('input');
-    try { const r = await api('POST', '/rules?scope=' + encodeURIComponent($('#rules-scope').value), { kind: f.dataset.kind, domain: inp.value }); inp.value = ''; toast(`${r.domain} ${f.dataset.kind === 'allow' ? 'allowed' : 'blocked'}`); loadRules(); }
-    catch (err) { toast(err.message); }
+    await api('POST', '/rules?scope=' + (me.isAdmin ? 'default' : 'user'), { kind, domain }); toast(`${domain} ${kind === 'allow' ? 'allowed' : 'blocked'}`); b.disabled = true;
   }));
-  $('section[data-page=rules]').addEventListener('click', async e => {
-    const b = e.target.closest('button[data-rm]'); if (!b) return;
-    await api('DELETE', '/rules?scope=' + encodeURIComponent($('#rules-scope').value), { kind: b.dataset.kind, domain: b.dataset.rm }); loadRules();
-  });
+
+  // ── reports ──
+  async function loadReports() {
+    await loadCatalog();
+    const names = await deviceNames();
+    const sel = $('#rep-dev'), cur = sel.value;
+    sel.innerHTML = '<option value="">' + (me.isAdmin ? 'Whole network' : 'All my devices') + '</option>' + devices.map(d => `<option value="${esc(d.id)}">${esc(d.name)}</option>`).join('');
+    sel.value = cur;
+    const hours = +$('#rep-hours').value;
+    const r = (await api('GET', `/reports?hours=${hours}&device=${encodeURIComponent(sel.value)}`)).report;
+    $('#rep-total').textContent = fmt(r.total); $('#rep-blocked').textContent = fmt(r.blocked); $('#rep-alerts').textContent = fmt(r.alerts.length);
+    $('#rep-pct').textContent = r.total ? (r.blocked * 100 / r.total).toFixed(1) + '%' : '';
+    $('#rep-tl-title').textContent = r.bucketMs >= 86400000 ? 'Per day' : 'Per hour';
+    drawChart($('#rep-chart'), r.timeline, r.bucketMs, r.bucketMs >= 86400000 ? Math.max(1, Math.round(hours / 24)) : hours);
+    $('#rep-svc').innerHTML = topRows(r.topServices, svcName, true);
+    $('#rep-cat').innerHTML = topRows(r.topCategories, catName, true);
+    $('#rep-blk').innerHTML = topRows(r.topBlocked);
+    $('#rep-why').innerHTML = topRows(r.topReasons);
+    $('#rep-cli').innerHTML = topRows(r.topClients, n => names[n] || n, true);
+    $('#rep-al').innerHTML = alertList(r.alerts, names);
+  }
+  ['#rep-dev', '#rep-hours'].forEach(s => $(s).addEventListener('change', () => guarded(loadReports)()));
+  const alertList = (as, names = {}) => (as || []).map(a => `<div class="list-item" style="padding:8px 12px"><span class="badge ${a.action === 'ban' ? 'b-block' : 'b-a'}">${esc(a.action.toUpperCase())}</span><div class="grow"><div style="font-size:13px">${esc(a.message)}</div><div class="muted mono" style="font-size:11px">${new Date(a.ts).toLocaleString()} · ${esc(names[a.deviceId] || a.ip)} · ${esc(a.scenario)}</div></div></div>`).join('') || '<span class="muted">No alerts.</span>';
 
   // ── devices ──
   async function loadDevices() {
     await deviceNames();
     $('#devices').innerHTML = devices.map(d => `
       <div class="list-item" style="align-items:flex-start">
-        <div class="grow"><div class="name">${esc(d.name)} <span class="badge ${d.kind === 'lan' ? 'b-v' : 'b-ok'}">${d.kind === 'lan' ? 'LAN' : 'APP'}</span> ${d.linked ? '<span class="badge b-ok">LINKED</span>' : ''} ${d.paused ? '<span class="badge b-block">PAUSED</span>' : ''}</div>
-          <div class="desc">${d.ips && d.ips.length ? 'IPs: <span class="mono">' + esc(d.ips.join(', ')) + '</span> · ' : ''}${d.lastSeen ? 'last seen ' + new Date(d.lastSeen * 1000).toLocaleString() : 'not seen yet'}</div>
+        <div class="grow"><div class="name">${esc(d.name)} <span class="badge ${d.kind === 'lan' ? 'b-v' : 'b-ok'}">${d.kind === 'lan' ? 'LAN' : 'APP'}</span> ${d.linked ? '<span class="badge b-ok">LINKED</span>' : ''} ${d.platform ? `<span class="badge b-v">${esc(d.platform.toUpperCase())}</span>` : ''} ${d.paused ? '<span class="badge b-block">PAUSED</span>' : ''}</div>
+          <div class="desc">${d.owner ? 'Owner ' + esc(d.owner) + ' · ' : ''}${d.ips && d.ips.length ? 'IPs: <span class="mono">' + esc(d.ips.join(', ')) + '</span> · ' : ''}${d.lastSeen ? 'last seen ' + when(d.lastSeen) : 'not seen yet'}</div>
           ${d.dohUrl ? `<div class="mono muted" style="font-size:11.5px;margin-top:4px">DoH ${esc(d.dohUrl)}<br>Private DNS ${esc(d.dotHost)}</div>` : `<div class="muted" style="font-size:11.5px;margin-top:4px">Set a public hostname in Settings to get this device's DoH URL / Private DNS name.</div>`}
         </div>
         <div class="row">
-          <button class="btn sm" data-act="pause" data-id="${esc(d.id)}">${d.paused ? 'Resume' : 'Pause'}</button>
+          ${me.isAdmin ? `<button class="btn sm" data-act="pause" data-id="${esc(d.id)}">${d.paused ? 'Resume' : 'Pause'}</button>` : ''}
           ${d.kind !== 'lan' ? `<button class="btn sm" data-act="link" data-id="${esc(d.id)}">Link app</button>` : ''}
           <button class="btn sm danger" data-act="del" data-id="${esc(d.id)}">Remove</button>
         </div>
       </div>`).join('') || '<p class="muted">No devices yet. Unknown clients use the network-wide default policy.</p>';
   }
-  $('#dev-form').addEventListener('submit', async e => {
+  $('#dev-form').addEventListener('submit', guarded(async e => {
     e.preventDefault();
     const ips = me.isAdmin ? $('#dev-ips').value.split(',').map(s => s.trim()).filter(Boolean) : [];
-    try { await api('POST', '/devices', { name: $('#dev-name').value, ips }); $('#dev-name').value = $('#dev-ips').value = ''; toast('Device added'); loadDevices(); }
-    catch (err) { toast(err.message); }
-  });
-  $('#devices').addEventListener('click', async e => {
+    await api('POST', '/devices', { name: $('#dev-name').value, ips }); $('#dev-name').value = $('#dev-ips').value = ''; toast('Device added'); loadDevices();
+  }));
+  $('#pair-form').addEventListener('submit', guarded(async e => {
+    e.preventDefault();
+    const r = await api('POST', '/devices/pair-code', { name: $('#pair-name').value.trim() });
+    $('#pair-code').textContent = r.code; $('#pair-exp').textContent = 'Valid until ' + new Date(r.expiresAt).toLocaleTimeString();
+    $('#pair-out').classList.remove('hidden'); $('#pair-name').value = '';
+  }));
+  $('#devices').addEventListener('click', guarded(async e => {
     const b = e.target.closest('button[data-act]'); if (!b) return;
     const d = devices.find(x => x.id === b.dataset.id);
     if (b.dataset.act === 'pause') { await api('PUT', '/devices/' + d.id, { paused: !d.paused }); toast(d.paused ? 'Protection resumed' : 'Protection paused'); }
@@ -462,7 +604,271 @@
       navigator.clipboard?.writeText(code).then(() => toast('Link code copied'), () => {});
     }
     loadDevices();
-  });
+  }));
+
+  // ── clients ──
+  async function loadClients() {
+    await deviceNames();
+    const cs = await api('GET', '/clients');
+    $('#cl-rows').innerHTML = cs.map(c => `<tr>
+      <td class="mono">${esc(c.ip)} ${c.lan ? '<span class="badge b-v">LAN</span>' : '<span class="badge b-a">' + esc(c.proto.toUpperCase() || 'NET') + '</span>'}</td>
+      <td>${esc(c.hostname || '')}<div class="muted" style="font-size:12px">${esc(c.vendor || '')}${c.mac ? ' · <span class="mono">' + esc(c.mac) + '</span>' : ''}</div></td>
+      <td class="mono">${fmt(c.queries)}</td><td class="t2" style="font-size:12.5px">${when(c.lastSeen)}</td>
+      <td>${c.deviceName ? esc(c.deviceName) : '<span class="muted">–</span>'}</td>
+      <td>${c.deviceId ? '' : `<button class="btn sm" data-ip="${esc(c.ip)}" data-host="${esc(c.hostname || c.vendor || '')}">Name this device</button>`}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No clients yet.</td></tr>';
+  }
+  $('#cl-rows').addEventListener('click', guarded(async e => {
+    const b = e.target.closest('button[data-ip]'); if (!b) return;
+    const opts = devices.filter(d => d.kind === 'lan').map(d => d.name).join(', ');
+    const name = prompt(`Name for ${b.dataset.ip}` + (opts ? ` (or type an existing device name to add this address to it: ${opts})` : ''), b.dataset.host.split('.')[0]);
+    if (!name) return;
+    const existing = devices.find(d => d.name.toLowerCase() === name.trim().toLowerCase());
+    await api('POST', '/clients/name', existing ? { ip: b.dataset.ip, deviceId: existing.id } : { ip: b.dataset.ip, name });
+    toast('Device saved'); loadClients();
+  }));
+
+  // ── users ──
+  async function loadUsers() {
+    users = await api('GET', '/users');
+    $('#user-rows').innerHTML = users.map(u => `<tr>
+      <td><b>${esc(u.username)}</b> ${u.disabled ? '<span class="badge b-block">DISABLED</span>' : ''}${u.id === me.id ? ' <span class="muted">(you)</span>' : ''}</td>
+      <td>${u.isAdmin ? '<span class="badge b-ok">ADMIN</span>' : '<span class="badge b-v">USER</span>'}</td>
+      <td class="mono">${u.deviceCount}</td><td class="t2" style="font-size:12.5px">${when(u.createdAt)}</td>
+      <td><div class="row" style="gap:6px;justify-content:flex-end">
+        <button class="btn sm" data-uact="pw" data-id="${u.id}">Reset password</button>
+        ${u.id !== me.id ? `<button class="btn sm" data-uact="dis" data-id="${u.id}">${u.disabled ? 'Enable' : 'Disable'}</button><button class="btn sm danger" data-uact="del" data-id="${u.id}">Delete</button>` : ''}
+      </div></td></tr>`).join('');
+  }
+  $('#user-form').addEventListener('submit', guarded(async e => {
+    e.preventDefault();
+    await api('POST', '/users', { username: $('#nu-name').value.trim(), password: $('#nu-pass').value, isAdmin: $('#nu-admin').checked });
+    $('#nu-name').value = $('#nu-pass').value = ''; $('#nu-admin').checked = false; toast('User added'); loadUsers();
+  }));
+  $('#user-rows').addEventListener('click', guarded(async e => {
+    const b = e.target.closest('button[data-uact]'); if (!b) return;
+    const u = users.find(x => x.id === +b.dataset.id);
+    if (b.dataset.uact === 'pw') { const pw = prompt(`New password for ${u.username} (10+ characters). They will be signed out.`); if (!pw) return; await api('PUT', '/users/' + u.id, { password: pw }); toast('Password changed'); }
+    if (b.dataset.uact === 'dis') { await api('PUT', '/users/' + u.id, { disabled: !u.disabled }); toast(u.disabled ? 'User enabled' : 'User disabled: sessions and app tokens stopped'); }
+    if (b.dataset.uact === 'del' && confirm(`Delete ${u.username} with all their devices and rules?`)) { await api('DELETE', '/users/' + u.id); toast('User deleted'); }
+    loadUsers();
+  }));
+
+  // ── policy pages (services, categories, SafeSearch, schedules) ──
+  let polScope = null, pol = null;
+  async function scopeOptions() {
+    await deviceNames();
+    let opts = '';
+    if (me.isAdmin) {
+      users = await api('GET', '/users').catch(() => []);
+      opts += '<option value="default">Whole network (baseline)</option>' + users.map(u => `<option value="user:${u.id}">Extras for ${esc(u.username)}'s devices</option>`).join('');
+    } else opts += '<option value="user">My extras (all my devices)</option>';
+    opts += devices.map(d => `<option value="device:${esc(d.id)}">Only ${esc(d.name)}</option>`).join('');
+    return opts;
+  }
+  async function loadPolicy(kind) {
+    await loadCatalog();
+    const opts = await scopeOptions();
+    if (!polScope) polScope = me.isAdmin ? 'default' : 'user';
+    $$('.pol-scope').forEach(s => { s.innerHTML = opts; if ([...s.options].some(o => o.value === polScope)) s.value = polScope; else polScope = s.value; });
+    pol = await api('GET', '/policy?scope=' + encodeURIComponent(polScope));
+    const net = pol.network, base = polScope === 'default';
+    $$('.pol-note').forEach(n => n.textContent = base ? 'Applies to every device. Users and devices can only add to it.' : 'Adds to the network baseline. Items set by the admin are locked.');
+    ({ services: renderServices, categories: renderCategories, safesearch: renderSafeSearch, schedules: renderSchedules })[kind](pol.policy, net, base);
+  }
+  $$('.pol-scope').forEach(s => s.addEventListener('change', () => { polScope = s.value; go(page); }));
+  async function savePolicy(p, msg) {
+    const r = await api('PUT', '/policy?scope=' + encodeURIComponent(polScope), p);
+    pol.policy = r.policy; toast(msg || 'Saved');
+  }
+  const locked = '<span class="badge b-a" title="Set by the admin for the whole network">SET BY ADMIN</span>';
+
+  function renderServices(p, net, base) {
+    const groups = {};
+    catalog.services.forEach(s => (groups[s.group] ||= []).push(s));
+    $('#svc-list').innerHTML = Object.entries(groups).map(([g, ss]) => `<div class="ov" style="margin:14px 0 8px">${esc(g)}</div><div class="tiles">` + ss.map(s => {
+      const lock = !base && net.services.includes(s.id), on = lock || p.services.includes(s.id);
+      return `<div class="list-item"><div class="grow"><div class="name">${esc(s.name)}</div><div class="desc">${s.domains.length} domains ${lock ? locked : ''}</div></div>${sw(`data-svc="${esc(s.id)}" aria-label="Block ${esc(s.name)}"`, on, lock)}</div>`;
+    }).join('') + '</div>').join('');
+  }
+  $('#svc-list').addEventListener('change', guarded(async e => {
+    const id = e.target.dataset.svc; if (!id) return;
+    const p = pol.policy; p.services = e.target.checked ? [...new Set([...p.services, id])] : p.services.filter(x => x !== id);
+    await savePolicy(p, `${svcName(id)} ${e.target.checked ? 'blocked' : 'unblocked'}`);
+  }));
+
+  function renderCategories(p, net, base) {
+    $('#cat-list').innerHTML = catalog.categories.map(c => {
+      const lock = !base && (net.categories.includes(c.id) || (c.enabledLists || []).length > 0);
+      const on = base ? (p.categories.includes(c.id) || (c.enabledLists || []).length > 0) : (lock || p.categories.includes(c.id));
+      const src = (c.enabledLists || []).length ? 'Lists: ' + c.enabledLists.join(', ') : (c.autoLists || []).length ? 'Uses: ' + c.autoLists.join(', ') : '';
+      return `<div class="list-item"><div class="grow"><div class="name">${esc(c.name)} ${c.defaultOn ? '<span class="badge b-ok">DEFAULT</span>' : ''} ${lock ? locked : ''}</div><div class="desc">${esc(c.description)}</div><div class="mono muted" style="font-size:11px">${esc(src)}</div></div>${sw(`data-cat="${esc(c.id)}" aria-label="Block ${esc(c.name)}"`, on, lock)}</div>`;
+    }).join('');
+  }
+  $('#cat-list').addEventListener('change', guarded(async e => {
+    const id = e.target.dataset.cat; if (!id) return;
+    const p = pol.policy; p.categories = e.target.checked ? [...new Set([...p.categories, id])] : p.categories.filter(x => x !== id);
+    await savePolicy(p, `${catName(id)} ${e.target.checked ? 'blocked' : 'allowed'}${e.target.checked ? '. Downloading its lists…' : ''}`);
+    catalog = null; await loadCatalog(); renderCategories(pol.policy, (await api('GET', '/policy?scope=default')).policy, polScope === 'default');
+  }));
+
+  function renderSafeSearch(p, net, base) {
+    const ss = p.safeSearch, ns = net.safeSearch;
+    const row = (k, label) => { const lock = !base && ns[k]; return `<div class="row" style="margin-bottom:12px"><span class="grow">${label} ${lock ? locked : ''}</span>${sw(`data-ss="${k}"`, lock || ss[k], lock)}</div>`; };
+    const lvl = { off: 0, moderate: 1, strict: 2 };
+    $('#ss-card').innerHTML = row('google', 'Google (all country domains)') + row('bing', 'Bing') + row('duckduckgo', 'DuckDuckGo') +
+      `<label class="f"><span>YouTube Restricted Mode ${!base && ns.youtube !== 'off' ? locked : ''}</span><select id="ss-yt">${['off', 'moderate', 'strict'].map(v => `<option value="${v}" ${(lvl[ss.youtube] >= lvl[ns.youtube] || base ? ss.youtube : ns.youtube) === v ? 'selected' : ''} ${!base && lvl[v] < lvl[ns.youtube] ? 'disabled' : ''}>${v === 'off' ? 'Off' : v === 'moderate' ? 'Moderate' : 'Strict'}</option>`).join('')}</select></label>`;
+  }
+  $('#ss-card').addEventListener('change', guarded(async e => {
+    const p = pol.policy;
+    if (e.target.dataset.ss) p.safeSearch[e.target.dataset.ss] = e.target.checked;
+    if (e.target.id === 'ss-yt') p.safeSearch.youtube = e.target.value;
+    await savePolicy(p, 'SafeSearch saved');
+  }));
+
+  function renderSchedules(p, net, base) {
+    const userScope = polScope === 'user' || polScope.startsWith('user:');
+    $('#sch-form-card').classList.toggle('hidden', userScope);
+    const all = [...(base ? [] : (net.schedules || []).map(s => ({ ...s, _locked: true }))), ...(p.schedules || [])];
+    $('#sch-list').innerHTML = userScope ? '<p class="muted">Schedules are set per device (pick a device above) or for the whole network.</p>' : all.map((s, i) => {
+      const what = s.action === 'block_all' ? 'Everything' + (s.allow?.length ? ' except ' + s.allow.join(', ') : '') : [...(s.services || []).map(svcName), ...(s.categories || []).map(catName)].join(', ') || 'nothing selected';
+      const idx = i - (base ? 0 : (net.schedules || []).length);
+      return `<div class="list-item"><div class="grow"><div class="name">${esc(s.name)} ${s._locked ? locked : ''}</div><div class="desc">${s.days.map(d => DAYS[d]).join(' ')} · ${esc(s.start)}–${esc(s.end)} · blocks ${esc(what)}</div></div>
+        ${s._locked ? '' : sw(`data-sch-on="${idx}"`, s.enabled) + `<button class="btn sm danger" data-sch-del="${idx}">Remove</button>`}</div>`;
+    }).join('') || '<p class="muted">No schedules.</p>';
+    $('#sch-days').innerHTML = DAYS.map((d, i) => `<label><input type="checkbox" value="${i}" ${i >= 0 && i <= 4 ? 'checked' : ''} /> ${d}</label>`).join('');
+    $('#sch-svc').innerHTML = catalog.services.map(s => `<label><input type="checkbox" value="${esc(s.id)}" /> ${esc(s.name)}</label>`).join('');
+    $('#sch-cat').innerHTML = catalog.categories.map(c => `<label><input type="checkbox" value="${esc(c.id)}" /> ${esc(c.name)}</label>`).join('');
+  }
+  $('#sch-action').addEventListener('change', () => { const sel = $('#sch-action').value === 'block_selected'; $('#sch-sel').classList.toggle('hidden', !sel); $('#sch-allow-l').classList.toggle('hidden', sel); });
+  $('#sch-list').addEventListener('change', guarded(async e => {
+    const i = e.target.dataset.schOn; if (i === undefined) return;
+    pol.policy.schedules[+i].enabled = e.target.checked; await savePolicy(pol.policy, 'Schedule saved');
+  }));
+  $('#sch-list').addEventListener('click', guarded(async e => {
+    const i = e.target.dataset?.schDel; if (i === undefined) return;
+    pol.policy.schedules.splice(+i, 1); await savePolicy(pol.policy, 'Schedule removed'); loadPolicy('schedules');
+  }));
+  $('#sch-form').addEventListener('submit', guarded(async e => {
+    e.preventDefault();
+    const checked = sel => [...document.querySelectorAll(sel + ' input:checked')].map(i => i.value);
+    const s = { name: $('#sch-name').value.trim() || 'Schedule', enabled: true, days: checked('#sch-days').map(Number), start: $('#sch-start').value, end: $('#sch-end').value,
+      action: $('#sch-action').value, services: checked('#sch-svc'), categories: checked('#sch-cat'), allow: $('#sch-allow').value.split(/\s+/).filter(Boolean) };
+    pol.policy.schedules = [...(pol.policy.schedules || []), s];
+    try { await savePolicy(pol.policy, 'Schedule added'); } catch (err) { pol.policy.schedules.pop(); throw err; }
+    $('#sch-name').value = $('#sch-allow').value = ''; loadPolicy('schedules');
+  }));
+
+  // ── rules ──
+  async function loadRules() {
+    const opts = await scopeOptions();
+    const sel = $('#rules-scope'), cur = sel.value;
+    sel.innerHTML = opts.replace('Whole network (baseline)', 'Whole network (wins over everything)').replace(/Extras for/g, 'All devices of').replace('My extras (all my devices)', 'All my devices');
+    if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+    const r = await api('GET', '/rules?scope=' + encodeURIComponent(sel.value));
+    const rows = kind => (r.rules || []).filter(x => x.kind === kind).map(x => `<div class="list-item" style="padding:8px 12px"><span class="mono grow">${esc(x.domain)}</span><button class="btn sm" data-rm="${esc(x.domain)}" data-kind="${kind}">Remove</button></div>`).join('') || '<span class="muted">None yet.</span>';
+    $('#rules-allow').innerHTML = rows('allow'); $('#rules-block').innerHTML = rows('block');
+  }
+  $('#rules-scope').addEventListener('change', () => guarded(loadRules)());
+  $$('form[data-kind]').forEach(f => f.addEventListener('submit', guarded(async e => {
+    e.preventDefault(); const inp = f.querySelector('input');
+    const r = await api('POST', '/rules?scope=' + encodeURIComponent($('#rules-scope').value), { kind: f.dataset.kind, domain: inp.value }); inp.value = ''; toast(`${r.domain} ${f.dataset.kind === 'allow' ? 'allowed' : 'blocked'}`); loadRules();
+  })));
+  $('section[data-page=rules]').addEventListener('click', guarded(async e => {
+    const b = e.target.closest('button[data-rm]'); if (!b) return;
+    await api('DELETE', '/rules?scope=' + encodeURIComponent($('#rules-scope').value), { kind: b.dataset.kind, domain: b.dataset.rm }); loadRules();
+  }));
+
+  // ── lists ──
+  async function loadLists() {
+    const r = await api('GET', '/lists');
+    await loadCatalog();
+    $('#custom-cat').innerHTML = catalog.categories.map(c => `<option value="${esc(c.id)}" ${c.id === 'custom' ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+    $('#lists-total').textContent = fmt(r.totalRules) + ' rules active.';
+    const groups = {};
+    r.lists.forEach(l => (groups[l.group] ||= []).push(l));
+    $('#lists').innerHTML = Object.entries(groups).map(([g, ls]) => `<div class="ov" style="margin:16px 0 8px">${esc(g)}</div>` + ls.map(l => `
+      <div class="list-item">
+        <div class="grow"><div class="name">${esc(l.name)} ${l.custom ? '<span class="badge b-v">CUSTOM</span>' : ''} <span class="badge b-v">${esc(l.categoryName)}</span> ${!l.enabled && l.inUse ? '<span class="badge b-a">USED BY A POLICY</span>' : ''}</div>
+          <div class="desc">${esc(l.description || l.url)}</div>
+          <div class="mono muted" style="font-size:11.5px">${l.status ? fmt(l.status.rules) + ' rules' + (l.status.updatedAt && !l.status.updatedAt.startsWith('0001') ? ' · updated ' + new Date(l.status.updatedAt).toLocaleString() : '') : (l.enabled ? 'downloading…' : 'off')}${l.status && l.status.error ? ' · <span style="color:var(--amber)">' + esc(l.status.error) + '</span>' : ''}</div></div>
+        ${l.custom ? `<button class="btn sm danger" data-del="${esc(l.id)}">Remove</button>` : ''}
+        ${sw(`data-list="${esc(l.id)}" aria-label="Enable ${esc(l.name)}"`, l.enabled)}
+      </div>`).join('')).join('');
+  }
+  $('#lists').addEventListener('change', guarded(async e => {
+    if (!e.target.dataset.list) return;
+    const enabled = $$('#lists input[data-list]').filter(i => i.checked).map(i => i.dataset.list);
+    await api('PUT', '/lists', { enabled }); toast('Lists saved. Downloading and rebuilding…');
+    setTimeout(() => guarded(loadLists)(), 4000);
+  }));
+  $('#lists').addEventListener('click', guarded(async e => {
+    const id = e.target.dataset?.del; if (!id) return;
+    await api('DELETE', '/lists/custom/' + id); toast('List removed'); loadLists();
+  }));
+  $('#lists-refresh').addEventListener('click', guarded(async () => { await api('POST', '/lists/refresh'); toast('Updating lists…'); setTimeout(() => guarded(loadLists)(), 6000); }));
+  $('#custom-form').addEventListener('submit', guarded(async e => {
+    e.preventDefault();
+    await api('POST', '/lists/custom', { name: $('#custom-name').value, url: $('#custom-url').value, category: $('#custom-cat').value }); $('#custom-url').value = $('#custom-name').value = ''; toast('List added. Enable it above.'); loadLists();
+  }));
+
+  // ── local records ──
+  async function loadRewrites() {
+    const rs = await api('GET', '/rewrites');
+    $('#rw-rows').innerHTML = rs.map(r => `<tr><td class="mono">${esc(r.domain)}</td><td><span class="badge b-v">${esc(r.type)}</span></td><td class="mono">${esc(r.value)}</td><td><button class="btn sm danger" data-rw="${esc(r.id)}">Remove</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted">No local records.</td></tr>';
+  }
+  $('#rw-form').addEventListener('submit', guarded(async e => {
+    e.preventDefault();
+    await api('POST', '/rewrites', { domain: $('#rw-domain').value, type: $('#rw-type').value, value: $('#rw-value').value });
+    $('#rw-domain').value = $('#rw-value').value = ''; toast('Record added'); loadRewrites();
+  }));
+  $('#rw-rows').addEventListener('click', guarded(async e => { const id = e.target.dataset?.rw; if (!id) return; await api('DELETE', '/rewrites/' + id); loadRewrites(); }));
+
+  // ── Guard ──
+  let gState = null;
+  const SCEN = [['flood', 'Query flood'], ['nxdomain', 'NXDOMAIN storm'], ['tunnel', 'DNS tunnelling'], ['malware', 'Infected device'], ['bruteForce', 'Sign-in brute force']];
+  async function loadGuard() {
+    const g = gState = await api('GET', '/guard');
+    const c = g.config;
+    $('#g-on').textContent = c.enabled ? 'ON' : 'OFF'; $('#g-on').style.color = c.enabled ? 'var(--mint)' : 'var(--muted)';
+    $('#g-ranges').textContent = fmt(g.stats.ranges) + ' threat ranges loaded';
+    $('#g-bans').textContent = fmt(g.bans.length); $('#g-alerts').textContent = fmt(g.alerts.length); $('#g-threat').textContent = fmt(g.stats.threatAnswers);
+    $('#g-enabled').checked = c.enabled; $('#g-eff-lan').value = c.banEffectLan; $('#g-eff-pub').value = c.banEffectPublic;
+    $('#g-never').value = c.neverBan.join('\n'); $('#g-qallow').value = c.quarantineAllow.join('\n');
+    $('#g-never-auto').textContent = 'Always protected: ' + g.neverBan.slice(0, 12).join(', ') + (g.neverBan.length > 12 ? '…' : '');
+    $('#g-sc').innerHTML = SCEN.map(([k, label]) => { const s = c[k]; return `<tr data-sc="${k}"><td>${label}</td><td>${sw('data-f="enabled"', s.enabled)}</td>
+      <td><select data-f="action" style="width:auto;padding:5px 8px"><option value="alert" ${s.action === 'alert' ? 'selected' : ''}>Alert</option><option value="ban" ${s.action === 'ban' ? 'selected' : ''}>Ban</option></select></td>
+      <td><input type="number" data-f="threshold" value="${s.threshold}" style="width:80px;padding:5px 8px" /></td><td><input type="number" data-f="windowSec" value="${s.windowSec}" style="width:80px;padding:5px 8px" /></td><td><input type="number" data-f="banMinutes" value="${s.banMinutes}" style="width:80px;padding:5px 8px" /></td></tr>`; }).join('');
+    $('#g-feeds').innerHTML = g.feeds.map(f => `<tr><td><b>${esc(f.name)}</b><div class="muted" style="font-size:12px">${esc(f.description)}</div></td><td>${sw(`data-feed="${esc(f.id)}" data-kind="dns"`, f.dns)}</td><td>${sw(`data-feed="${esc(f.id)}" data-kind="export"`, f.export)}</td>
+      <td class="mono" style="font-size:12px">${f.status ? fmt(f.status.entries) + (f.status.error ? ' <span style="color:var(--amber)">' + esc(f.status.error) + '</span>' : '') : '<span class="muted">off</span>'}</td></tr>`).join('');
+    $('#g-ban-list').innerHTML = g.bans.map(b => `<div class="list-item" style="padding:8px 12px"><div class="grow"><span class="mono">${esc(b.ip)}</span> <span class="badge ${b.origin === 'manual' ? 'b-v' : 'b-block'}">${esc(b.scenario)}</span><div class="muted" style="font-size:12px">${esc(b.reason)} · ${b.expiresAt ? 'until ' + when(b.expiresAt) : 'until removed'}</div></div><button class="btn sm" data-unban="${b.id}">Unban</button></div>`).join('') || '<span class="muted">No active bans.</span>';
+    $('#g-bc-list').innerHTML = g.bouncers.map(b => `<div class="list-item" style="padding:8px 12px"><div class="grow"><b>${esc(b.name)}</b><div class="muted" style="font-size:12px">${b.lastUsed ? 'last pull ' + when(b.lastUsed) + ' from ' + esc(b.lastIp) : 'never used'}</div></div><button class="btn sm danger" data-bc="${esc(b.id)}">Revoke</button></div>`).join('') || '<span class="muted">No bouncers.</span>';
+    $('#g-bc-url').textContent = location.origin + '/api/v1/guard/blocklist.txt';
+    const names = await deviceNames();
+    $('#g-al').innerHTML = alertList(g.alerts.slice(0, 50), names);
+  }
+  function guardConfigFromForm() {
+    const c = structuredClone(gState.config);
+    c.enabled = $('#g-enabled').checked; c.banEffectLan = $('#g-eff-lan').value; c.banEffectPublic = $('#g-eff-pub').value;
+    c.neverBan = $('#g-never').value.split(/\s+/).filter(Boolean); c.quarantineAllow = $('#g-qallow').value.split(/\s+/).filter(Boolean);
+    $$('#g-sc tr[data-sc]').forEach(tr => { const s = c[tr.dataset.sc]; tr.querySelectorAll('[data-f]').forEach(i => { s[i.dataset.f] = i.type === 'checkbox' ? i.checked : i.type === 'number' ? +i.value : i.value; }); });
+    c.dnsFeeds = $$('#g-feeds input[data-kind=dns]').filter(i => i.checked).map(i => i.dataset.feed);
+    c.exportFeeds = $$('#g-feeds input[data-kind=export]').filter(i => i.checked).map(i => i.dataset.feed);
+    return c;
+  }
+  $('#g-save').addEventListener('click', guarded(async () => { await api('PUT', '/guard/config', guardConfigFromForm()); toast('Guard saved'); loadGuard(); }));
+  $('#g-feeds').addEventListener('change', guarded(async () => { await api('PUT', '/guard/config', guardConfigFromForm()); toast('Feeds saved. Updating…'); setTimeout(() => guarded(loadGuard)(), 5000); }));
+  $('#g-refresh').addEventListener('click', guarded(async () => { await api('POST', '/guard/feeds/refresh'); toast('Updating feeds…'); setTimeout(() => guarded(loadGuard)(), 6000); }));
+  $('#g-ban-form').addEventListener('submit', guarded(async e => {
+    e.preventDefault(); await api('POST', '/guard/bans', { ip: $('#g-ban-ip').value.trim(), minutes: +$('#g-ban-min').value || 0 });
+    $('#g-ban-ip').value = ''; toast('Banned'); loadGuard();
+  }));
+  $('#g-ban-list').addEventListener('click', guarded(async e => { const id = e.target.dataset?.unban; if (!id) return; await api('DELETE', '/guard/bans/' + id); toast('Unbanned'); loadGuard(); }));
+  $('#g-bc-form').addEventListener('submit', guarded(async e => {
+    e.preventDefault(); const r = await api('POST', '/guard/bouncers', { name: $('#g-bc-name').value });
+    $('#g-bc-key').textContent = 'Key (shown once): ' + r.key; $('#g-bc-key').classList.remove('hidden'); $('#g-bc-name').value = '';
+    navigator.clipboard?.writeText(r.key).catch(() => {}); loadGuard();
+  }));
+  $('#g-bc-list').addEventListener('click', guarded(async e => { const id = e.target.dataset?.bc; if (!id || !confirm('Revoke this key?')) return; await api('DELETE', '/guard/bouncers/' + id); loadGuard(); }));
 
   // ── settings ──
   async function loadSettings() {
@@ -474,20 +880,20 @@
     $('#s-custom').value = known ? '' : s.upstream;
     $('#s-fallback').value = (s.plainFallback || []).join(', ');
     $('#s-mode').value = s.blockMode; $('#s-host').value = s.publicHostname || ''; $('#s-ret').value = s.retentionDays;
+    $('#s-bypass').value = s.blockBypass || 'lan'; $('#s-ptr').value = s.localPTRResolver || '';
     $('#s-log').checked = s.logQueries; $('#s-signup').checked = s.allowSignup;
   }
-  $('#s-save').addEventListener('click', async () => {
+  $('#s-save').addEventListener('click', guarded(async () => {
     const up = $('#s-upstream').value === 'custom' ? $('#s-custom').value.trim() : $('#s-upstream').value;
-    try {
-      await api('PUT', '/settings', { upstream: up, plainFallback: $('#s-fallback').value.split(',').map(s => s.trim()).filter(Boolean).map(s => s.includes(':') ? s : s + ':53'),
-        blockMode: $('#s-mode').value, publicHostname: $('#s-host').value.trim(), retentionDays: +$('#s-ret').value,
-        logQueries: $('#s-log').checked, allowSignup: $('#s-signup').checked });
-      toast('Settings saved');
-    } catch (err) { toast(err.message); }
-  });
+    await api('PUT', '/settings', { upstream: up, plainFallback: $('#s-fallback').value.split(',').map(s => s.trim()).filter(Boolean).map(s => s.includes(':') ? s : s + ':53'),
+      blockMode: $('#s-mode').value, publicHostname: $('#s-host').value.trim(), retentionDays: +$('#s-ret').value,
+      blockBypass: $('#s-bypass').value, localPTRResolver: $('#s-ptr').value.trim(),
+      logQueries: $('#s-log').checked, allowSignup: $('#s-signup').checked });
+    toast('Settings saved');
+  }));
 
   boot().catch(err => { document.body.insertAdjacentHTML('beforeend', `<p class="center">Can't reach the server: ${esc(err.message)}</p>`); });
-  setInterval(() => { if (me && !$('section[data-page=overview]').classList.contains('hidden')) loadOverview().catch(() => {}); }, 15000);
+  setInterval(() => { if (me && page === 'overview' && !document.hidden) loadOverview().catch(() => {}); }, 15000);
 })();
 </script>
 </body>

@@ -1,4 +1,4 @@
-﻿plugins {
+plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -12,8 +12,8 @@ android {
         applicationId = "app.zeroleakage.mobile"
         minSdk = 29          // ConnectivityManager.getConnectionOwnerUid (per-app DNS attribution)
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.3.1"
+        versionCode = 7
+        versionName = "1.4.0"
     }
 
     buildTypes {

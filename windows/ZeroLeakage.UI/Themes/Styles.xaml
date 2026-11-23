@@ -506,6 +506,34 @@
         </Setter>
     </Style>
 
+    <!-- PasswordBox in the TextBox.Input look -->
+    <Style x:Key="PasswordBox.Input" TargetType="PasswordBox">
+        <Setter Property="FontFamily" Value="{StaticResource Font.Mono}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}" />
+        <Setter Property="CaretBrush" Value="{DynamicResource Brush.ModeAccent}" />
+        <Setter Property="Height" Value="34" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="PasswordBox">
+                    <Border x:Name="Bd" CornerRadius="10" BorderThickness="1"
+                            Background="{StaticResource Brush.Inset}" BorderBrush="{StaticResource Brush.Border}">
+                        <ScrollViewer x:Name="PART_ContentHost" Margin="10,0" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Brush.ModeAccent}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.5" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- ═════════════════════════ Lists ═════════════════════════ -->
     <Style x:Key="ListBox.Clean" TargetType="ListBox">
         <Setter Property="Background" Value="Transparent" />

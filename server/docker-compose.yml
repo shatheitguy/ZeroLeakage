@@ -1,7 +1,7 @@
 services:
   zeroleakage:
     build: .
-    image: zeroleakage-server:latest
+    image: ghcr.io/shatheitguy/zeroleakage-server:latest
     container_name: zeroleakage
     restart: unless-stopped
     ports:
@@ -14,4 +14,12 @@ services:
       - ./data:/data
     environment:
       ZL_TRUST_PROXY: "false"   # "true" only if a reverse proxy you control sets X-Forwarded-For
-      TZ: Asia/Dubai
+      TZ: Asia/Dubai            # schedules (bedtime, homework) use this time zone
+    healthcheck:
+      test: ["CMD", "zeroleakage-server", "-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    # Note: with bridge networking Docker may show every LAN client as the bridge gateway, so per-device
+    # policies by IP, client discovery and MAC/vendor detection work best with docker-compose.host.yml.

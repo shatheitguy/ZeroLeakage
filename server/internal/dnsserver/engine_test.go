@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/miekg/dns"
@@ -16,6 +17,8 @@ import (
 	"github.com/shatheitguy/ZeroLeakage/server/internal/store"
 	"github.com/shatheitguy/ZeroLeakage/server/internal/upstream"
 )
+
+var calls atomic.Int64
 
 // fakeDoH answers every A query with 203.0.113.7, except cloaked.example.com which is a CNAME to doubleclick.net.
 func fakeDoH(t *testing.T) *httptest.Server {
@@ -29,6 +32,27 @@ func fakeDoH(t *testing.T) *httptest.Server {
 		m := new(dns.Msg)
 		m.SetReply(q)
 		name := q.Question[0].Name
+		calls.Add(1)
+		switch name {
+		case "nx.example.com.":
+			m.Rcode = dns.RcodeNameError
+			out, _ := m.Pack()
+			w.Header().Set("Content-Type", "application/dns-message")
+			_, _ = w.Write(out)
+			return
+		case "c2host.example.":
+			m.Answer = append(m.Answer, &dns.A{Hdr: dns.RR_Header{Name: name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60}, A: net.ParseIP("198.51.100.66")})
+			out, _ := m.Pack()
+			w.Header().Set("Content-Type", "application/dns-message")
+			_, _ = w.Write(out)
+			return
+		}
+		if q.Question[0].Qtype == dns.TypeAAAA {
+			out, _ := m.Pack()
+			w.Header().Set("Content-Type", "application/dns-message")
+			_, _ = w.Write(out)
+			return
+		}
 		if name == "cloaked.example.com." {
 			m.Answer = append(m.Answer, &dns.CNAME{Hdr: dns.RR_Header{Name: name, Rrtype: dns.TypeCNAME, Class: dns.ClassINET, Ttl: 60}, Target: "stats.doubleclick.net."})
 		}

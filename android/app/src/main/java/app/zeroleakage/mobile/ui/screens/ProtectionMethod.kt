@@ -53,12 +53,10 @@ fun ProtectionMethodCard(shield: ShieldController) {
     val running by ZeroLeakage.vpnRunning.collectAsStateWithLifecycle()
     var status by remember { mutableStateOf(PrivateDns.status(context)) }
     var canAuto by remember { mutableStateOf(PrivateDns.canSwitchAutomatically(context)) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            status = PrivateDns.status(context)
-            canAuto = PrivateDns.canSwitchAutomatically(context)
-            delay(2_000)
-        }
+    val tick = app.zeroleakage.mobile.ui.components.rememberVisibleTicker(2_000)
+    LaunchedEffect(tick) {
+        status = PrivateDns.status(context)
+        canAuto = PrivateDns.canSwitchAutomatically(context)
     }
     val lite = method == ZeroLeakage.Method.LITE
     val provider = PrivateDns.PROVIDERS.firstOrNull { it.id == providerId } ?: PrivateDns.PROVIDERS.first()
@@ -240,8 +238,7 @@ fun DnsHealthBanner(onOpenDns: () -> Unit = {}) {
     val health by ZeroLeakage.dnsHealth.collectAsStateWithLifecycle()
     val running by ZeroLeakage.vpnRunning.collectAsStateWithLifecycle()
     val fallbackOn by ZeroLeakage.fallbackDns.collectAsStateWithLifecycle()
-    var now by remember { mutableStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(5_000) } }
+    val now = app.zeroleakage.mobile.ui.components.rememberVisibleTicker(5_000)
     if (!running || now - health.at > 120_000) return
     when {
         health.failing -> Notice(

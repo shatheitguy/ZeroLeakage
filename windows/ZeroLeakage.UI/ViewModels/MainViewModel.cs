@@ -44,6 +44,8 @@ public sealed class MainViewModel : ObservableObject
 
         Dashboard = new DashboardViewModel(this, engine);
         Firewall = new FirewallViewModel(this, engine);
+        Guard = new GuardViewModel(this);
+        Account = new AccountViewModel(this, App.Sync);
         Dns = new DnsTelemetryViewModel(this, engine);
         DeepScan = new DeepScanViewModel(this, engine);
         Updates = new UpdatesViewModel(this, settings);
@@ -55,6 +57,7 @@ public sealed class MainViewModel : ObservableObject
         {
             new("Dashboard", "", Dashboard),
             new("Firewall Rules", "", Firewall),
+            new("Guard", "", Guard),
             new("DNS & Telemetry", "", Dns),
             new("DeepScan AV", "", DeepScan),
             new("Snapshots & Settings", "", Settings),
@@ -102,6 +105,7 @@ public sealed class MainViewModel : ObservableObject
             if (DeepScan.UpdateDefinitionsCommand.CanExecute(null)) DeepScan.UpdateDefinitionsCommand.Execute(null);
         });
         ExitCommand = new RelayCommand(() => { IsProfileMenuOpen = false; RequestExit(); });
+        OpenGuardCommand = new RelayCommand(() => SelectedNav = NavItems.First(n => n.Page == Guard));
         Updates.UpdateAvailabilityChanged += (_, _) => OnPropertyChanged(nameof(HasUpdateBadge));
 
         _clock = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -115,6 +119,9 @@ public sealed class MainViewModel : ObservableObject
     // ───────────── child pages ─────────────
     public DashboardViewModel Dashboard { get; }
     public FirewallViewModel Firewall { get; }
+    public GuardViewModel Guard { get; }
+    public AccountViewModel Account { get; }
+    public ICommand OpenGuardCommand { get; }
     public DnsTelemetryViewModel Dns { get; }
     public DeepScanViewModel DeepScan { get; }
     public SettingsViewModel Settings { get; }
@@ -146,6 +153,8 @@ public sealed class MainViewModel : ObservableObject
             if (value is null || !SetProperty(ref _selectedNav, value)) return;
             if (value.Page == Firewall) Firewall.Refresh();
             if (value.Page == DeepScan) DeepScan.Refresh();
+            if (value.Page == Guard) Guard.Activate();
+            else Guard.Deactivate();
             CurrentPage = value.Page;
         }
     }

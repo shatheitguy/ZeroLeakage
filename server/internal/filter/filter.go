@@ -13,7 +13,9 @@ package filter
 import (
 	"bufio"
 	"io"
+	"math/bits"
 	"strings"
+	"sync/atomic"
 )
 
 // Kind is what a parsed rule does.
@@ -151,33 +153,45 @@ func CleanDomain(raw string) (string, bool) {
 
 // Source labels where a rule came from.
 type Source struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Category string `json:"category"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Category   string `json:"category"`   // display name, e.g. "Ads & trackers"
+	CategoryID string `json:"categoryId"` // e.g. "ads"
 }
 
 // Match explains a decision.
 type Match struct {
-	Blocked  bool   `json:"blocked"`
-	ListID   string `json:"listId"`
-	ListName string `json:"listName"`
-	Category string `json:"category"`
-	Rule     string `json:"rule"`
-	Matched  string `json:"matched"`
+	Blocked    bool   `json:"blocked"`
+	ListID     string `json:"listId"`
+	ListName   string `json:"listName"`
+	Category   string `json:"category"`
+	CategoryID string `json:"categoryId,omitempty"`
+	Rule       string `json:"rule"`
+	Matched    string `json:"matched"`
 }
 
 const (
 	UserAllowID = "user_allow"
 	UserBlockID = "user_block"
+	// MaxSources is how many lists one index can hold (each list is one bit of a uint64 mask).
+	MaxSources = 64
 )
 
-// Index is an immutable rule index over many lists. Duplicates are stored once (first list wins).
+// AllLists is a mask that selects every list in an index.
+const AllLists = ^uint64(0)
+
+var genCounter atomic.Uint64
+
+// Index is an immutable rule index over up to 64 lists. Every domain maps to the bitmask of the lists
+// that contain it, so one shared index can serve many policies that each use a different set of lists.
 type Index struct {
+	Gen         uint64 // unique per built index (policies cache their list masks per generation)
 	sources     []Source
-	blockExact  map[string]uint16
-	blockSuffix map[string]uint16
-	allowExact  map[string]uint16
-	allowSuffix map[string]uint16
+	byID        map[string]int
+	blockExact  map[string]uint64
+	blockSuffix map[string]uint64
+	allowExact  map[string]uint64
+	allowSuffix map[string]uint64
 	Counts      map[string]int
 }
 
@@ -186,19 +200,22 @@ type Builder struct{ idx *Index }
 
 func NewBuilder() *Builder {
 	return &Builder{&Index{
-		blockExact: map[string]uint16{}, blockSuffix: map[string]uint16{},
-		allowExact: map[string]uint16{}, allowSuffix: map[string]uint16{},
+		byID:       map[string]int{},
+		blockExact: map[string]uint64{}, blockSuffix: map[string]uint64{},
+		allowExact: map[string]uint64{}, allowSuffix: map[string]uint64{},
 		Counts: map[string]int{},
 	}}
 }
 
-// AddList parses r line by line; returns the number of usable rules.
+// AddList parses r line by line; returns the number of usable rules (-1 when the index is full).
 func (b *Builder) AddList(src Source, r io.Reader, plainIsSuffix bool) int {
-	if len(b.idx.sources) >= 65535 {
-		return 0
+	if len(b.idx.sources) >= MaxSources {
+		return -1
 	}
-	id := uint16(len(b.idx.sources))
+	id := len(b.idx.sources)
+	bit := uint64(1) << id
 	b.idx.sources = append(b.idx.sources, src)
+	b.idx.byID[src.ID] = id
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64*1024), 1024*1024)
 	n := 0
@@ -208,7 +225,7 @@ func (b *Builder) AddList(src Source, r io.Reader, plainIsSuffix bool) int {
 			continue
 		}
 		n++
-		var m map[string]uint16
+		var m map[string]uint64
 		switch rule.Kind {
 		case BlockExact:
 			m = b.idx.blockExact
@@ -219,15 +236,16 @@ func (b *Builder) AddList(src Source, r io.Reader, plainIsSuffix bool) int {
 		default:
 			m = b.idx.allowSuffix
 		}
-		if _, exists := m[rule.Domain]; !exists {
-			m[rule.Domain] = id
-		}
+		m[rule.Domain] |= bit
 	}
 	b.idx.Counts[src.ID] = n
 	return n
 }
 
-func (b *Builder) Build() *Index { return b.idx }
+func (b *Builder) Build() *Index {
+	b.idx.Gen = genCounter.Add(1)
+	return b.idx
+}
 
 // Empty is an index with no rules.
 var Empty = NewBuilder().Build()
@@ -237,37 +255,109 @@ func (x *Index) TotalRules() int {
 	return len(x.blockExact) + len(x.blockSuffix) + len(x.allowExact) + len(x.allowSuffix)
 }
 
-// Match decides a domain against the lists plus the caller's own allow/block sets
-// (each user entry covers the domain and its subdomains). Returns nil when nothing matched.
-func (x *Index) Match(domain string, userAllow, userBlock map[string]bool) *Match {
+// Sources lists the indexed lists in bit order.
+func (x *Index) Sources() []Source { return x.sources }
+
+// Mask returns the bitmask selecting the given list ids (unknown ids are ignored).
+func (x *Index) Mask(ids []string) uint64 {
+	var m uint64
+	for _, id := range ids {
+		if i, ok := x.byID[id]; ok {
+			m |= 1 << i
+		}
+	}
+	return m
+}
+
+// Bit returns the mask bit of one list (0 when not indexed).
+func (x *Index) Bit(id string) uint64 {
+	if i, ok := x.byID[id]; ok {
+		return 1 << i
+	}
+	return 0
+}
+
+// CategoryOf returns the category of the first list in mask (for tagging queries in reports).
+func (x *Index) CategoryOf(mask uint64) (id, name string) {
+	if mask == 0 {
+		return "", ""
+	}
+	s := x.sources[bits.TrailingZeros64(mask)]
+	return s.CategoryID, s.Category
+}
+
+// MatchUser decides a domain against allow/block domain sets (each entry covers the domain and its
+// subdomains). Allow beats block. Returns nil when neither matched.
+func MatchUser(domain string, userAllow, userBlock map[string]bool) *Match {
 	d := strings.ToLower(strings.TrimSuffix(domain, "."))
-	if s, ok := walk(d, func(s string) bool { return userAllow[s] }); ok {
-		return &Match{false, UserAllowID, "Your allowlist", "Allowlisted", "@@||" + s + "^", s}
+	if len(userAllow) > 0 {
+		if s, ok := walk(d, func(s string) bool { return userAllow[s] }); ok {
+			return &Match{Blocked: false, ListID: UserAllowID, ListName: "Your allowlist", Category: "Allowlisted", Rule: "@@||" + s + "^", Matched: s}
+		}
 	}
-	if s, ok := walk(d, func(s string) bool { return userBlock[s] }); ok {
-		return &Match{true, UserBlockID, "Your blocklist", "User Blocklist", "||" + s + "^", s}
-	}
-	if id, ok := x.allowExact[d]; ok {
-		return x.hit(false, id, "@@|"+d+"^", d)
-	}
-	if s, ok := walk(d, func(s string) bool { _, ok := x.allowSuffix[s]; return ok }); ok {
-		return x.hit(false, x.allowSuffix[s], "@@||"+s+"^", s)
-	}
-	if id, ok := x.blockExact[d]; ok {
-		return x.hit(true, id, "0.0.0.0 "+d, d)
-	}
-	if s, ok := walk(d, func(s string) bool { _, ok := x.blockSuffix[s]; return ok }); ok {
-		return x.hit(true, x.blockSuffix[s], "||"+s+"^", s)
+	if len(userBlock) > 0 {
+		if s, ok := walk(d, func(s string) bool { return userBlock[s] }); ok {
+			return &Match{Blocked: true, ListID: UserBlockID, ListName: "Your blocklist", Category: "User Blocklist", Rule: "||" + s + "^", Matched: s}
+		}
 	}
 	return nil
 }
 
-func (x *Index) hit(blocked bool, id uint16, rule, matched string) *Match {
-	s := x.sources[id]
-	return &Match{blocked, s.ID, s.Name, s.Category, rule, matched}
+// MatchLists decides a domain against the lists selected by mask: list exceptions beat list blocks.
+// seen is the mask of every indexed list that lists the domain as blocked (selected or not), which
+// callers use to tag allowed queries with a category.
+func (x *Index) MatchLists(domain string, mask uint64) (m *Match, seen uint64) {
+	d := strings.ToLower(strings.TrimSuffix(domain, "."))
+	if mask != 0 {
+		if v := x.allowExact[d] & mask; v != 0 {
+			return x.hit(false, v, "@@|"+d+"^", d), 0
+		}
+		if s, ok := walk(d, func(s string) bool { return x.allowSuffix[s]&mask != 0 }); ok {
+			return x.hit(false, x.allowSuffix[s]&mask, "@@||"+s+"^", s), 0
+		}
+	}
+	if v := x.blockExact[d]; v != 0 {
+		if v&mask != 0 {
+			return x.hit(true, v&mask, "0.0.0.0 "+d, d), v
+		}
+		seen |= v
+	}
+	for s := d; ; {
+		if v := x.blockSuffix[s]; v != 0 {
+			if v&mask != 0 {
+				return x.hit(true, v&mask, "||"+s+"^", s), seen | v
+			}
+			seen |= v
+		}
+		dot := strings.IndexByte(s, '.')
+		if dot < 0 || dot == len(s)-1 {
+			break
+		}
+		s = s[dot+1:]
+		if !strings.Contains(s, ".") {
+			break
+		}
+	}
+	return nil, seen
 }
 
-// walk calls f for the domain and each parent (never a bare TLD) and returns the first that matched.
+// Match is MatchUser followed by MatchLists (user allow > user block > list allow > list block).
+func (x *Index) Match(domain string, userAllow, userBlock map[string]bool, mask uint64) *Match {
+	if m := MatchUser(domain, userAllow, userBlock); m != nil {
+		return m
+	}
+	m, _ := x.MatchLists(domain, mask)
+	return m
+}
+
+func (x *Index) hit(blocked bool, mask uint64, rule, matched string) *Match {
+	s := x.sources[bits.TrailingZeros64(mask)]
+	return &Match{Blocked: blocked, ListID: s.ID, ListName: s.Name, Category: s.Category, CategoryID: s.CategoryID, Rule: rule, Matched: matched}
+}
+
+// Walk calls f for the domain and each parent (never a bare TLD) and returns the first that matched.
+func Walk(d string, f func(string) bool) (string, bool) { return walk(d, f) }
+
 func walk(d string, f func(string) bool) (string, bool) {
 	for {
 		if f(d) {

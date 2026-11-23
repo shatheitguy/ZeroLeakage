@@ -24,6 +24,11 @@
                                     Visibility="{Binding DefaultOn, Converter={StaticResource BoolToVisible}}">
                                 <TextBlock Style="{StaticResource Badge.Text}" Foreground="{StaticResource Brush.Mint}" Text="DEFAULT" />
                             </Border>
+                            <Border Margin="8,0,0,0" Style="{StaticResource Badge}" Background="{StaticResource Brush.VioletSoft}" BorderBrush="{StaticResource Brush.VioletLine}"
+                                    Visibility="{Binding IsLocked, Converter={StaticResource BoolToVisible}}"
+                                    ToolTip="Your network's admin requires this list. It can't be switched off on this PC.">
+                                <TextBlock Style="{StaticResource Badge.Text}" Foreground="{StaticResource Brush.Violet}" Text="SET BY ADMIN" />
+                            </Border>
                         </StackPanel>
                         <TextBlock Margin="0,2,0,0" Style="{StaticResource Text.Caption}" Text="{Binding Description}" TextWrapping="Wrap" />
                         <Grid Margin="0,6,0,0">
@@ -38,12 +43,12 @@
                                     Visibility="{Binding HasHomepage, Converter={StaticResource BoolToVisible}}"
                                     Command="{Binding DataContext.OpenHomepageCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
                             <Button Style="{StaticResource Button.Chip.Danger}" Content="Remove"
-                                    Visibility="{Binding IsCustom, Converter={StaticResource BoolToVisible}}"
+                                    Visibility="{Binding IsCustom, Converter={StaticResource BoolToVisible}}" IsEnabled="{Binding CanToggle}"
                                     Command="{Binding DataContext.RemoveListCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
                         </StackPanel>
                     </StackPanel>
                     <ToggleButton Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Top" Style="{StaticResource Toggle.Switch}"
-                                  Background="{StaticResource Brush.Violet}" IsChecked="{Binding IsEnabled}" />
+                                  Background="{StaticResource Brush.Violet}" IsChecked="{Binding IsEnabled}" IsEnabled="{Binding CanToggle}" />
                 </Grid>
             </Border>
             <DataTemplate.Triggers>
@@ -91,6 +96,20 @@
                 <TextBlock Style="{StaticResource Text.Title}" Text="DNS, Filters &amp; Telemetry" />
                 <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Body}" TextWrapping="Wrap"
                            Text="AdGuard-style filter lists, encrypted DNS-over-HTTPS with DNSSEC, offline GeoIP and Windows telemetry controls." />
+                <Border Margin="0,12,0,0" Style="{StaticResource Card.Inset}" BorderBrush="{StaticResource Brush.VioletLine}" Padding="14,10"
+                        Visibility="{Binding IsManaged, Converter={StaticResource BoolToVisible}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Style="{StaticResource Text.Icon}" FontSize="15" VerticalAlignment="Top" Text="&#xE895;" Foreground="{StaticResource Brush.Violet}" />
+                        <StackPanel Grid.Column="1" Margin="12,0,0,0">
+                            <TextBlock FontSize="13" FontWeight="SemiBold" Text="{Binding ManagedTitle}" />
+                            <TextBlock Margin="0,2,0,0" Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Text="{Binding ManagedText}" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
             </StackPanel>
 
             <StackPanel Grid.Row="2" Orientation="Horizontal">
@@ -339,6 +358,24 @@
                         <TextBlock Style="{StaticResource Text.Caption}" Visibility="{Binding CustomDomains.Count, Converter={StaticResource ZeroToVisible}}"
                                    Text="No custom domains yet." />
                         <ItemsControl ItemsSource="{Binding CustomDomains}" ItemTemplate="{StaticResource BlockRow}" />
+                        <StackPanel Margin="0,12,0,0" Visibility="{Binding HasLockedDomains, Converter={StaticResource BoolToVisible}}">
+                            <TextBlock Style="{StaticResource SectionTitle}" Text="SET BY ADMIN — CAN'T BE UNBLOCKED HERE" />
+                            <ItemsControl Margin="0,8,0,0" ItemsSource="{Binding LockedDomainsShown}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border CornerRadius="8" Padding="10,6" Margin="0,0,0,4" Background="{StaticResource Brush.Inset}">
+                                            <Grid>
+                                                <TextBlock Style="{StaticResource Text.Mono}" Text="{Binding}" VerticalAlignment="Center" />
+                                                <Border HorizontalAlignment="Right" Style="{StaticResource Badge}" Background="{StaticResource Brush.VioletSoft}" BorderBrush="{StaticResource Brush.VioletLine}">
+                                                    <TextBlock Style="{StaticResource Badge.Text}" FontSize="9.5" Foreground="{StaticResource Brush.Violet}" Text="SET BY ADMIN" />
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding LockedDomainsMoreText}" />
+                        </StackPanel>
                     </StackPanel>
                 </Border>
             </Grid>

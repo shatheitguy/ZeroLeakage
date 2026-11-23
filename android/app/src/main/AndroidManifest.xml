@@ -65,6 +65,8 @@
         </service>
 
         <receiver android:name=".vpn.PromptActionReceiver" android:exported="false" />
+        <receiver android:name=".vpn.StatusDismissedReceiver" android:exported="false" />
+        <receiver android:name=".data.GuardActionReceiver" android:exported="false" />
         <receiver android:name=".data.UpdateInstallReceiver" android:exported="false" />
 
         <!-- Quick Settings tiles: shield on/off and protection mode -->

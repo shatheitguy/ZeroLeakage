@@ -107,12 +107,170 @@ public sealed class FilterListService
     }
 
     // ───────────────────────── matching ─────────────────────────
-    public FilterMatch? Match(string domain) => _index.Match(domain);
+    /// <summary>
+    /// Order: the server admin's locked blocks → your allow → your block → server-managed allow/block
+    /// (blocked services, categories…) → filter lists. "Bypass blocking" from the server turns matching off.
+    /// </summary>
+    public FilterMatch? Match(string domain)
+    {
+        var m = _managed;
+        if (m.Bypass) return null;
+        var d = domain.ToLowerInvariant().TrimEnd('.');
+        if (m.LockedBlock.Count > 0 && FindSuffix(d, m.LockedBlock) is { } locked)
+            return new FilterMatch(true, "server_locked", $"Set by admin · {m.ManagedBy}", "Network policy", $"||{locked}^", locked);
+        var hit = _index.Match(d);
+        if (hit is { ListId: "user_allow" or "user_block" }) return hit;
+        if (m.Allow.Count > 0 && FindSuffix(d, m.Allow) is { } a)
+            return new FilterMatch(false, "server_allow", $"Managed by {m.ManagedBy}", "Allowlisted", $"@@||{a}^", a);
+        if (m.Block.Count > 0 && FindSuffix(d, m.Block) is { } b)
+            return new FilterMatch(true, "server_block", $"Managed by {m.ManagedBy}", "Server policy", $"||{b}^", b);
+        return hit;
+    }
+
+    private static string? FindSuffix(string d, HashSet<string> set)
+    {
+        for (var s = d; ; )
+        {
+            if (set.Contains(s)) return s;
+            int dot = s.IndexOf('.');
+            if (dot < 0 || dot == s.Length - 1) return null;
+            s = s[(dot + 1)..];
+        }
+    }
+
+    // ───────────────────────── ZeroLeakage Server management ─────────────────────────
+    private sealed record ManagedState(string ManagedBy, HashSet<string> LockedBlock, HashSet<string> Allow, HashSet<string> Block, bool Bypass,
+        ZeroLeakage.Shared.Link.PolicyLocks Locks)
+    {
+        public static readonly ManagedState None = new("", new(), new(), new(), false, ZeroLeakage.Shared.Link.PolicyLocks.None);
+    }
+
+    private volatile ManagedState _managed = ManagedState.None;
+
+    /// <summary>Raised when the user edits rules or lists (not when sync applies the server's state).</summary>
+    public event EventHandler? LocalChanged;
+    /// <summary>Raised after sync applied or removed server management.</summary>
+    public event EventHandler? ManagedChanged;
+
+    public bool IsManaged => _managed.ManagedBy.Length > 0;
+    public string ManagedBy => _managed.ManagedBy;
+    public bool BypassBlocking => _managed.Bypass;
+    public ObservableCollection<string> LockedBlockDomains { get; } = new();
+    public int ManagedBlockCount => _managed.Block.Count;
+
+    /// <summary>Null when the domain may be allowed; otherwise the "Set by admin" explanation.</summary>
+    public string? AllowLockReason(string raw)
+    {
+        var d = FilterParser.Normalize(raw);
+        if (d is null) return null;
+        return _managed.Locks.CanAllow(d, out var reason) ? null : reason;
+    }
+
+    public void NotifyLocalListChange()
+    {
+        if (!IsRestoring) LocalChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public ZeroLeakage.Shared.Link.LocalProtectionSnapshot Snapshot() => new()
+    {
+        EnabledLists = Lists.Where(l => !l.IsCustom && l.IsEnabled).Select(l => l.Id).ToList(),
+        CustomLists = Lists.Where(l => l.IsCustom).Select(l => new ZeroLeakage.Shared.Link.CustomListSpec
+        {
+            Url = l.Url ?? "", Name = l.Name, Category = l.Category, Enabled = l.IsEnabled, Locked = l.IsLocked,
+        }).ToList(),
+        Allow = UserAllow.ToList(),
+        Block = UserBlock.ToList(),
+    };
+
+    /// <summary>Makes this PC an exact clone of the plan (must run on the UI thread).</summary>
+    public async Task ApplyManagedAsync(ZeroLeakage.Shared.Link.SyncPlan plan)
+    {
+        ApplyState(plan.EnabledLists, plan.LockedLists, plan.CustomLists, plan.Allow, plan.Block);
+        _managed = new ManagedState(plan.ManagedBy,
+            new HashSet<string>(plan.LockedBlockDomains, StringComparer.Ordinal),
+            new HashSet<string>(plan.ManagedAllow, StringComparer.Ordinal),
+            new HashSet<string>(plan.ManagedBlock, StringComparer.Ordinal),
+            plan.BypassBlocking, plan.Locks);
+        Replace(LockedBlockDomains, plan.LockedBlockDomains);
+        Save();
+        ManagedChanged?.Invoke(this, EventArgs.Empty);
+        IndexRebuilt?.Invoke(this, EventArgs.Empty);
+        _ = StartAsync();   // downloads newly enabled lists in the background; sync doesn't wait for them
+        await Task.CompletedTask;
+    }
+
+    /// <summary>Unlink: back to the PC's own protection from before linking, nothing managed or locked.</summary>
+    public async Task RestoreLocalAsync(ZeroLeakage.Shared.Link.LocalProtectionSnapshot s)
+    {
+        ApplyState(new HashSet<string>(s.EnabledLists, StringComparer.OrdinalIgnoreCase), new HashSet<string>(),
+            s.CustomLists.Select(c => new ZeroLeakage.Shared.Link.CustomListSpec { Url = c.Url, Name = c.Name, Category = c.Category, Enabled = c.Enabled }).ToList(),
+            s.Allow, s.Block);
+        _managed = ManagedState.None;
+        LockedBlockDomains.Clear();
+        Save();
+        ManagedChanged?.Invoke(this, EventArgs.Empty);
+        IndexRebuilt?.Invoke(this, EventArgs.Empty);
+        _ = StartAsync();   // downloads newly enabled lists in the background; sync doesn't wait for them
+        await Task.CompletedTask;
+    }
+
+    private void ApplyState(ISet<string> enabled, ISet<string> locked, IReadOnlyList<ZeroLeakage.Shared.Link.CustomListSpec> custom,
+        IReadOnlyList<string> allow, IReadOnlyList<string> block)
+    {
+        IsRestoring = true;
+        try
+        {
+            var wanted = custom.Where(c => c.Url.Length > 0).GroupBy(c => c.Url, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            foreach (var l in Lists.Where(l => l.IsCustom && (l.Url is null || !wanted.ContainsKey(l.Url))).ToList())
+            {
+                Lists.Remove(l);
+                try { File.Delete(FileFor(l.Id)); } catch { /* ignore */ }
+            }
+            foreach (var c in wanted.Values)
+            {
+                var l = Lists.FirstOrDefault(x => x.IsCustom && string.Equals(x.Url, c.Url, StringComparison.OrdinalIgnoreCase));
+                if (l is null)
+                {
+                    l = new BlocklistSource
+                    {
+                        Id = CustomId(c.Url), Name = c.Name, Description = c.Url, Group = "Custom lists",
+                        Category = string.IsNullOrWhiteSpace(c.Category) ? "Custom List" : c.Category, Url = c.Url, IsCustom = true,
+                    };
+                    Lists.Add(l);
+                }
+                l.IsEnabled = c.Enabled;
+                l.IsLocked = c.Locked;
+            }
+            foreach (var l in Lists.Where(l => !l.IsCustom))
+            {
+                l.IsEnabled = enabled.Contains(l.Id);
+                l.IsLocked = locked.Contains(l.Id);
+            }
+            Replace(UserAllow, allow);
+            Replace(UserBlock, block);
+        }
+        finally { IsRestoring = false; }
+        _index = _index.WithUser(UserAllow, UserBlock);
+    }
+
+    private static void Replace(ObservableCollection<string> target, IEnumerable<string> items)
+    {
+        var list = items.ToList();
+        if (target.SequenceEqual(list)) return;
+        target.Clear();
+        foreach (var i in list) target.Add(i);
+    }
+
+    private static string CustomId(string url) =>
+        "custom_" + Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(url)))[..8].ToLowerInvariant();
 
     // ───────────────────────── subscriptions ─────────────────────────
     public async Task SetEnabledAsync(BlocklistSource list, bool on)
     {
+        if (list.IsLocked && !on) return;   // set by the server admin
         list.IsEnabled = on;
+        NotifyLocalListChange();
         Save();
         if (on && !list.IsBundled && !File.Exists(FileFor(list.Id))) await DownloadAsync(list);
         else await RebuildAsync();
@@ -150,15 +308,17 @@ public sealed class FilterListService
         };
         Lists.Add(list);
         await SetEnabledAsync(list, true);
+        NotifyLocalListChange();
         return list.Error;
     }
 
     public async Task RemoveCustomAsync(BlocklistSource list)
     {
-        if (!list.IsCustom) return;
+        if (!list.IsCustom || list.IsLocked) return;
         Lists.Remove(list);
         try { File.Delete(FileFor(list.Id)); } catch { /* ignore */ }
         Save();
+        NotifyLocalListChange();
         await RebuildAsync();
     }
 
@@ -172,6 +332,7 @@ public sealed class FilterListService
     {
         var d = FilterParser.Normalize(raw);
         if (d is null) return null;
+        if (into == UserAllow && AllowLockReason(d) is not null) return null;   // admin baseline can't be unblocked
         other.Remove(d);
         if (!into.Contains(d)) into.Insert(0, d);
         UserChanged();
@@ -183,6 +344,7 @@ public sealed class FilterListService
         _index = _index.WithUser(UserAllow, UserBlock);
         Save();
         IndexRebuilt?.Invoke(this, EventArgs.Empty);
+        if (!IsRestoring) LocalChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public async Task RestoreDefaultsAsync()
@@ -281,6 +443,18 @@ public sealed class FilterListService
         public List<CustomList> Custom { get; set; } = new();
         public List<string> Allow { get; set; } = new();
         public List<string> Block { get; set; } = new();
+        public Managed? Server { get; set; }
+    }
+
+    /// <summary>Last state applied from a linked ZeroLeakage Server (kept so protection holds offline / before the first sync).</summary>
+    private sealed class Managed
+    {
+        public string ManagedBy { get; set; } = "";
+        public List<string> LockedLists { get; set; } = new();
+        public List<string> LockedBlock { get; set; } = new();
+        public List<string> Allow { get; set; } = new();
+        public List<string> Block { get; set; } = new();
+        public bool Bypass { get; set; }
     }
 
     private sealed class CustomList
@@ -288,6 +462,7 @@ public sealed class FilterListService
         public string Id { get; set; } = "";
         public string Name { get; set; } = "";
         public string Url { get; set; } = "";
+        public bool Locked { get; set; }
     }
 
     private void Load()
@@ -302,7 +477,7 @@ public sealed class FilterListService
             return;
         }
         foreach (var c in st.Custom)
-            Lists.Add(new BlocklistSource { Id = c.Id, Name = c.Name, Description = c.Url, Group = "Custom lists", Category = "Custom List", Url = c.Url, IsCustom = true });
+            Lists.Add(new BlocklistSource { Id = c.Id, Name = c.Name, Description = c.Url, Group = "Custom lists", Category = "Custom List", Url = c.Url, IsCustom = true, IsLocked = c.Locked });
         foreach (var l in Lists)
         {
             l.IsEnabled = st.Enabled.Contains(l.Id);
@@ -314,6 +489,13 @@ public sealed class FilterListService
         }
         foreach (var d in st.Allow) UserAllow.Add(d);
         foreach (var d in st.Block) UserBlock.Add(d);
+        if (st.Server is { ManagedBy.Length: > 0 } m)
+        {
+            foreach (var l in Lists.Where(l => !l.IsCustom)) l.IsLocked = m.LockedLists.Contains(l.Id);
+            var locks = new ZeroLeakage.Shared.Link.PolicyLocks(m.LockedLists, Array.Empty<string>(), Array.Empty<string>(), m.LockedBlock, m.ManagedBy);
+            _managed = new ManagedState(m.ManagedBy, new HashSet<string>(m.LockedBlock), new HashSet<string>(m.Allow), new HashSet<string>(m.Block), m.Bypass, locks);
+            foreach (var d in m.LockedBlock) LockedBlockDomains.Add(d);
+        }
     }
 
     private void Save()
@@ -325,9 +507,18 @@ public sealed class FilterListService
             {
                 Enabled = Lists.Where(l => l.IsEnabled).Select(l => l.Id).ToList(),
                 Updated = Lists.Where(l => l.UpdatedAt is not null).ToDictionary(l => l.Id, l => l.UpdatedAt!.Value),
-                Custom = Lists.Where(l => l.IsCustom).Select(l => new CustomList { Id = l.Id, Name = l.Name, Url = l.Url! }).ToList(),
+                Custom = Lists.Where(l => l.IsCustom).Select(l => new CustomList { Id = l.Id, Name = l.Name, Url = l.Url!, Locked = l.IsLocked }).ToList(),
                 Allow = UserAllow.ToList(),
                 Block = UserBlock.ToList(),
+                Server = _managed.ManagedBy.Length == 0 ? null : new Managed
+                {
+                    ManagedBy = _managed.ManagedBy,
+                    LockedLists = Lists.Where(l => !l.IsCustom && l.IsLocked).Select(l => l.Id).ToList(),
+                    LockedBlock = _managed.LockedBlock.ToList(),
+                    Allow = _managed.Allow.ToList(),
+                    Block = _managed.Block.ToList(),
+                    Bypass = _managed.Bypass,
+                },
             };
             File.WriteAllText(StatePath, JsonSerializer.Serialize(st, new JsonSerializerOptions { WriteIndented = true }));
         }

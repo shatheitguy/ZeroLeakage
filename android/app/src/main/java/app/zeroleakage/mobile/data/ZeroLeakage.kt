@@ -115,6 +115,23 @@ object ZeroLeakage {
         prefs.edit().putBoolean("taken_over", v).apply()
     }
 
+    /** When you last turned the shield off yourself (epoch ms). Starting another VPN soon after = "paused for it". */
+    @Volatile var lastUserStopAt: Long = 0L
+
+    /** ZeroLeakage is Android's Always-on VPN (blocks other VPNs from starting) / with "block connections without VPN". */
+    private val _alwaysOn = MutableStateFlow(false)
+    val alwaysOn: StateFlow<Boolean> = _alwaysOn.asStateFlow()
+    fun setAlwaysOn(v: Boolean) {
+        _alwaysOn.value = v
+        prefs.edit().putBoolean("always_on", v).apply()
+    }
+
+    /** Pause the shield so another VPN (e.g. WireGuard) can run; it comes back when that VPN disconnects. */
+    fun pauseForOtherVpn(context: Context) {
+        setTakenOver(true)
+        app.zeroleakage.mobile.vpn.ZeroLeakVpnService.stop(context, userStop = false)
+    }
+
     /** Set by a notification tap: the UI turns the shield back on (with Android's consent prompt if needed). */
     private val _resumeRequested = MutableStateFlow(false)
     val resumeRequested: StateFlow<Boolean> = _resumeRequested.asStateFlow()
@@ -187,12 +204,17 @@ object ZeroLeakage {
 
     fun allowOnce(pkg: String) {
         allowedOnce.add(pkg)
+        publishAllowedOnce()
         pendingPrompts.remove(pkg)
         releaseDecision(pkg)
     }
 
     /** Apps the user tapped "Allow once" for — cleared whenever the shield restarts. */
     val allowedOnce: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    /** Observable copy of [allowedOnce] for the UI. */
+    private val _allowedOnceNow = MutableStateFlow<Set<String>>(emptySet())
+    val allowedOnceNow: StateFlow<Set<String>> = _allowedOnceNow.asStateFlow()
+    private fun publishAllowedOnce() { _allowedOnceNow.value = allowedOnce.toSet() }
     /**
      * "Ask to connect" pacing: a package is not asked again before this time (epoch ms).
      * Shown prompt = 10 min; swiped away ("not now") = 1 h. Allow / Block clears it (no more prompts anyway).
@@ -221,6 +243,7 @@ object ZeroLeakage {
         _startOnBoot.value = prefs.getBoolean("boot", false)
         _quietNotification.value = prefs.getBoolean("quiet_notif", true)
         _takenOver.value = prefs.getBoolean("taken_over", false)
+        _alwaysOn.value = prefs.getBoolean("always_on", false)
         _dismissedTips.value = prefs.getStringSet("tips_dismissed", null)?.toSet() ?: emptySet()
         _onboarded.value = prefs.getBoolean("onboarded", false)
         _rules.value = decodeRules(prefs.getString("rules", null))
@@ -237,12 +260,15 @@ object ZeroLeakage {
         )
         Filters.init(context, prefs)
         GeoIp.init(context)
+        FeedHistory.init(context)
+        Guard.init(context, prefs)
+        ServerLink.init(context, prefs)
     }
 
     // ───────────────────────── settings ─────────────────────────
     fun setMode(mode: ProtectionMode) {
         _mode.value = mode
-        allowedOnce.clear()
+        allowedOnce.clear(); publishAllowedOnce()
         prefs.edit().putString("mode", mode.name).apply()
     }
 
@@ -250,7 +276,7 @@ object ZeroLeakage {
         if (running && _takenOver.value) setTakenOver(false)
         if (running && !_vpnRunning.value) vpnStartedAt = System.currentTimeMillis()
         _vpnRunning.value = running
-        if (!running) allowedOnce.clear()
+        if (!running) { allowedOnce.clear(); publishAllowedOnce() }
     }
 
     fun setResolver(id: String) {
@@ -316,7 +342,7 @@ object ZeroLeakage {
         _resolverId.value = RESOLVERS.first().id
         _dnssec.value = true
         _dnssecStrict.value = false
-        allowedOnce.clear()
+        allowedOnce.clear(); publishAllowedOnce()
         Filters.restoreDefaults()
         prefs.edit()
             .remove("rules").remove("resolver").remove("dnssec").remove("dnssec_strict")
@@ -326,6 +352,7 @@ object ZeroLeakage {
     fun resetStats() {
         _stats.value = Stats(dohLatencyMs = _stats.value.dohLatencyMs)
         _feed.value = emptyList()
+        FeedHistory.clear()
         persistStats()
     }
 
@@ -369,6 +396,7 @@ object ZeroLeakage {
                byFilter: Boolean = false, detail: PacketDetail? = null) {
         val event = FeedEvent(feedIds.incrementAndGet(), System.currentTimeMillis(), verdict, appLabel, pkg, domain, category, detail)
         _feed.update { (listOf(event) + it).take(FEED_LIMIT) }
+        FeedHistory.add(event)
         _stats.update { s0 ->
             val s = s0.copy(totalQueries = s0.totalQueries + 1).let { d ->
                 if (detail == null || !detail.dnssecRequested || detail.dnssec == DnssecStatus.NOT_CHECKED) d

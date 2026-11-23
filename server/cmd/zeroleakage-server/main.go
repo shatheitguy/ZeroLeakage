@@ -17,7 +17,9 @@ import (
 	"time"
 
 	"github.com/shatheitguy/ZeroLeakage/server/internal/api"
+	"github.com/shatheitguy/ZeroLeakage/server/internal/clients"
 	"github.com/shatheitguy/ZeroLeakage/server/internal/dnsserver"
+	"github.com/shatheitguy/ZeroLeakage/server/internal/guard"
 	"github.com/shatheitguy/ZeroLeakage/server/internal/lists"
 	"github.com/shatheitguy/ZeroLeakage/server/internal/store"
 	"github.com/shatheitguy/ZeroLeakage/server/internal/upstream"
@@ -44,10 +46,14 @@ func main() {
 	trustProxy := flag.Bool("trust-proxy", env("ZL_TRUST_PROXY", "false") == "true", "use X-Forwarded-For for client IPs (only behind your own proxy)")
 	debug := flag.Bool("debug", env("ZL_DEBUG", "false") == "true", "verbose logging")
 	showVersion := flag.Bool("version", false, "print version and exit")
+	health := flag.Bool("healthcheck", false, "check that the running server answers on -http and exit (for Docker HEALTHCHECK)")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println("zeroleakage-server", version)
 		return
+	}
+	if *health {
+		os.Exit(healthcheck(*httpAddr))
 	}
 
 	level := slog.LevelInfo
@@ -81,13 +87,17 @@ func run(log *slog.Logger, c config) error {
 		return err
 	}
 	lm := lists.NewManager(c.dataDir, log)
-	if cs, err := st.CustomLists(); err == nil {
-		api.SyncCustomLists(lm, cs)
-	}
 	up := upstream.New(upstream.Resolver{}, nil, nil)
 	api.ConfigureUpstream(up, settings)
 
 	engine := dnsserver.NewEngine(lm, up, st, log)
+	g := guard.New(st, c.dataDir, log)
+	if err := g.Load(); err != nil {
+		return err
+	}
+	engine.Guard = g
+	tracker := clients.NewTracker(st, log, func() string { return engine.Settings().LocalPTRResolver })
+	engine.Clients = tracker
 	if err := engine.Reload(settings); err != nil {
 		return err
 	}
@@ -95,8 +105,12 @@ func run(log *slog.Logger, c config) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Built-in lists load instantly; remote lists download in the background (refreshed daily).
-	go lm.Rebuild(ctx, settings.EnabledLists, 24*time.Hour)
+	// Built-in lists load instantly; remote lists and Guard feeds download in the background (daily).
+	listIDs := engine.ListIDs()
+	go lm.Rebuild(ctx, listIDs, 24*time.Hour)
+	go g.RefreshFeeds(ctx, 24*time.Hour)
+	go g.Run(ctx)
+	go tracker.Run(ctx)
 	go engine.RunBackground(ctx)
 
 	tlsConf := loadTLS(c, log)
@@ -104,7 +118,8 @@ func run(log *slog.Logger, c config) error {
 	dnsServers := dnsserver.StartDNS(engine, c.dnsAddr, c.dotAddr, tlsConf, settings.PublicHostname, errs)
 	defer dnsServers.Shutdown()
 
-	a := &api.API{Engine: engine, Store: st, Lists: lm, Upstream: up, Log: log, Version: version, TrustProxy: c.trustProxy}
+	a := &api.API{Engine: engine, Store: st, Lists: lm, Upstream: up, Guard: g, Clients: tracker, Log: log, Version: version, TrustProxy: c.trustProxy}
+	a.MarkBuilt(listIDs)
 	handler := a.Handler()
 	var httpServers []*http.Server
 	serve := func(addr string, tc *tls.Config) {
@@ -199,4 +214,24 @@ func loadTLS(c config, log *slog.Logger) *tls.Config {
 		return nil
 	}
 	return &tls.Config{MinVersion: tls.VersionTLS12, GetCertificate: get, NextProtos: []string{"h2", "http/1.1", "dot"}}
+}
+
+// healthcheck GETs /api/v1/status on the local HTTP listener; exit code 0 when healthy.
+func healthcheck(addr string) int {
+	host := addr
+	if strings.HasPrefix(host, ":") || strings.HasPrefix(host, "0.0.0.0:") {
+		host = "127.0.0.1:" + host[strings.LastIndex(host, ":")+1:]
+	}
+	cl := &http.Client{Timeout: 4 * time.Second}
+	resp, err := cl.Get("http://" + host + "/api/v1/status")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "unhealthy:", err)
+		return 1
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintln(os.Stderr, "unhealthy: HTTP", resp.StatusCode)
+		return 1
+	}
+	return 0
 }

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,9 +19,13 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/shatheitguy/ZeroLeakage/server/internal/clients"
 	"github.com/shatheitguy/ZeroLeakage/server/internal/dnsserver"
 	"github.com/shatheitguy/ZeroLeakage/server/internal/filter"
+	"github.com/shatheitguy/ZeroLeakage/server/internal/guard"
 	"github.com/shatheitguy/ZeroLeakage/server/internal/lists"
+	"github.com/shatheitguy/ZeroLeakage/server/internal/netinfo"
+	"github.com/shatheitguy/ZeroLeakage/server/internal/policy"
 	"github.com/shatheitguy/ZeroLeakage/server/internal/store"
 	"github.com/shatheitguy/ZeroLeakage/server/internal/upstream"
 )
@@ -36,12 +41,17 @@ type API struct {
 	Store      *store.Store
 	Lists      *lists.Manager
 	Upstream   *upstream.Client
+	Guard      *guard.Guard     // optional
+	Clients    *clients.Tracker // optional
 	Log        *slog.Logger
 	Version    string
 	TrustProxy bool
 
 	loginMu  sync.Mutex
-	failures map[string][]time.Time // ip -> recent failed logins
+	failures map[string][]time.Time // ip -> recent failed logins / pairing attempts
+
+	buildMu   sync.Mutex
+	lastBuilt []string
 }
 
 // Handler returns the full HTTP handler (dashboard, API and DoH).
@@ -80,13 +90,42 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/devices/{id}", a.auth(a.deleteDevice))
 	mux.HandleFunc("POST /api/v1/devices/{id}/link", a.auth(a.linkDevice))
 	mux.HandleFunc("POST /api/v1/devices/link", a.linkApp) // app signs in with username/password
+	mux.HandleFunc("POST /api/v1/devices/pair-code", a.auth(a.pairCode))
+	mux.HandleFunc("POST /api/v1/devices/pair", a.pair) // app redeems a pairing code
 
 	mux.HandleFunc("GET /api/v1/sync", a.device(a.getSync))
 	mux.HandleFunc("PUT /api/v1/sync", a.device(a.putSync))
 
 	mux.HandleFunc("GET /api/v1/stats", a.auth(a.stats))
 	mux.HandleFunc("GET /api/v1/querylog", a.auth(a.querylog))
+	mux.HandleFunc("GET /api/v1/reports", a.auth(a.reports))
+
 	mux.HandleFunc("GET /api/v1/users", a.admin(a.users))
+	mux.HandleFunc("POST /api/v1/users", a.admin(a.createUser))
+	mux.HandleFunc("PUT /api/v1/users/{id}", a.admin(a.updateUser))
+	mux.HandleFunc("DELETE /api/v1/users/{id}", a.admin(a.deleteUser))
+
+	mux.HandleFunc("GET /api/v1/services", a.auth(a.services))
+	mux.HandleFunc("GET /api/v1/categories", a.auth(a.categories))
+	mux.HandleFunc("GET /api/v1/policy", a.auth(a.getPolicy))
+	mux.HandleFunc("PUT /api/v1/policy", a.auth(a.putPolicy))
+	mux.HandleFunc("GET /api/v1/rewrites", a.admin(a.getRewrites))
+	mux.HandleFunc("POST /api/v1/rewrites", a.admin(a.addRewrite))
+	mux.HandleFunc("DELETE /api/v1/rewrites/{id}", a.admin(a.deleteRewrite))
+	mux.HandleFunc("GET /api/v1/clients", a.admin(a.getClients))
+	mux.HandleFunc("POST /api/v1/clients/name", a.admin(a.nameClient))
+
+	mux.HandleFunc("GET /api/v1/guard", a.admin(a.guardStatus))
+	mux.HandleFunc("PUT /api/v1/guard/config", a.admin(a.guardConfig))
+	mux.HandleFunc("POST /api/v1/guard/bans", a.admin(a.guardBan))
+	mux.HandleFunc("DELETE /api/v1/guard/bans/{id}", a.admin(a.guardUnban))
+	mux.HandleFunc("POST /api/v1/guard/unban", a.admin(a.guardUnbanIP))
+	mux.HandleFunc("POST /api/v1/guard/feeds/refresh", a.admin(a.guardRefresh))
+	mux.HandleFunc("GET /api/v1/guard/alerts", a.admin(a.guardAlerts))
+	mux.HandleFunc("GET /api/v1/guard/bouncers", a.admin(a.getBouncers))
+	mux.HandleFunc("POST /api/v1/guard/bouncers", a.admin(a.createBouncer))
+	mux.HandleFunc("DELETE /api/v1/guard/bouncers/{id}", a.admin(a.deleteBouncer))
+	mux.HandleFunc("GET /api/v1/guard/blocklist.txt", a.blocklist)
 
 	static, _ := fs.Sub(webFS, "web")
 	mux.Handle("/", http.FileServerFS(static))
@@ -112,7 +151,9 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func fail(w http.ResponseWriter, code int, msg string) { writeJSON(w, code, map[string]string{"error": msg}) }
+func fail(w http.ResponseWriter, code int, msg string) {
+	writeJSON(w, code, map[string]string{"error": msg})
+}
 
 func readJSON(r *http.Request, v any) error {
 	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 1<<20))
@@ -156,11 +197,19 @@ func (a *API) admin(next http.HandlerFunc) http.HandlerFunc {
 	})
 }
 
+func bearer(r *http.Request) string {
+	h := r.Header.Get("Authorization")
+	if tok, ok := strings.CutPrefix(h, "Bearer "); ok {
+		return strings.TrimSpace(tok)
+	}
+	return ""
+}
+
 // device authenticates a linked app by its bearer token.
 func (a *API) device(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if tok == "" || tok == r.Header.Get("Authorization") {
+		tok := bearer(r)
+		if tok == "" {
 			fail(w, http.StatusUnauthorized, "device token required")
 			return
 		}
@@ -173,15 +222,51 @@ func (a *API) device(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// reload recompiles policy and starts a list rebuild when the set of lists in use changed.
 func (a *API) reload() {
 	if err := a.Engine.Reload(a.Engine.Settings()); err != nil {
 		a.Log.Error("reload failed", "err", err)
 	}
+	a.rebuildIfNeeded(false)
+}
+
+// rebuildIfNeeded downloads/rebuilds filter lists when the needed set changed (or always when force).
+func (a *API) rebuildIfNeeded(force bool) {
+	ids := a.Engine.ListIDs()
+	a.buildMu.Lock()
+	changed := force || !slices.Equal(ids, a.lastBuilt)
+	if changed {
+		a.lastBuilt = ids
+	}
+	a.buildMu.Unlock()
+	if changed {
+		go a.Lists.Rebuild(context.Background(), ids, 0)
+	}
+}
+
+// MarkBuilt records the list set main() already built at start-up.
+func (a *API) MarkBuilt(ids []string) {
+	a.buildMu.Lock()
+	a.lastBuilt = ids
+	a.buildMu.Unlock()
 }
 
 // canManage: admins manage everything; users manage their own devices.
 func canManage(u store.User, d store.Device) bool {
 	return u.IsAdmin || (d.UserID != nil && *d.UserID == u.ID)
+}
+
+// ownDeviceIDs lists the device ids a non-admin may see (nil for admins = everything).
+func (a *API) ownDeviceIDs(u store.User) []string {
+	if u.IsAdmin {
+		return nil
+	}
+	ds, _ := a.Store.Devices(&u.ID)
+	ids := []string{}
+	for _, d := range ds {
+		ids = append(ids, d.ID)
+	}
+	return ids
 }
 
 var domainRe = regexp.MustCompile(`^[a-z0-9_.-]+$`)
@@ -199,6 +284,8 @@ func normalizeDomain(raw string) (string, bool) {
 	return filter.CleanDomain(d)
 }
 
+func (a *API) clientIP(r *http.Request) string { return dnsserver.ClientIP(r, a.TrustProxy) }
+
 // ───────────────────────── status & auth ─────────────────────────
 
 func (a *API) status(w http.ResponseWriter, r *http.Request) {
@@ -215,6 +302,10 @@ func (a *API) status(w http.ResponseWriter, r *http.Request) {
 		"rules":       a.Lists.Index().TotalRules(),
 		"hostname":    st.PublicHostname,
 	})
+}
+
+func (a *API) serverInfo() map[string]any {
+	return map[string]any{"name": "ZeroLeakage Server", "version": a.Version, "hostname": a.Engine.Settings().PublicHostname}
 }
 
 type credentials struct {
@@ -268,7 +359,7 @@ func (a *API) setup(w http.ResponseWriter, r *http.Request) {
 	a.startSession(w, r, u)
 }
 
-// tooManyFailures: max 10 failed logins per IP per 15 minutes.
+// tooManyFailures: max 10 failed logins / pairing attempts per IP per 15 minutes.
 func (a *API) tooManyFailures(ip string, record bool) bool {
 	a.loginMu.Lock()
 	defer a.loginMu.Unlock()
@@ -282,20 +373,52 @@ func (a *API) tooManyFailures(ip string, record bool) bool {
 	if record {
 		recent = append(recent, time.Now())
 	}
-	a.failures[ip] = recent
+	if len(recent) == 0 {
+		delete(a.failures, ip)
+	} else {
+		a.failures[ip] = recent
+	}
 	return len(recent) >= 10
 }
 
-func (a *API) checkPassword(r *http.Request, c credentials) (store.User, error) {
-	ip := dnsserver.ClientIP(r, a.TrustProxy)
+// authBlocked: an address with a Guard ban may not sign in (LAN clients only for brute-force bans,
+// so a quarantined family device can still reach the dashboard's sign-in).
+func (a *API) authBlocked(ip string) bool {
 	if a.tooManyFailures(ip, false) {
-		return store.User{}, errors.New("too many attempts, try again in 15 minutes")
+		return true
+	}
+	addr, ok := netinfo.Parse(ip)
+	if !ok || a.Guard == nil {
+		return false
+	}
+	if d := a.Guard.Banned(addr); d != nil {
+		return !netinfo.IsLAN(addr) || d.Scenario == guard.ScenarioBruteForce
+	}
+	return false
+}
+
+func (a *API) recordFailure(ip string) {
+	a.tooManyFailures(ip, true)
+	if addr, ok := netinfo.Parse(ip); ok && a.Guard != nil {
+		a.Guard.LoginFailure(addr)
+	}
+}
+
+var errTooMany = errors.New("too many attempts, try again in 15 minutes")
+
+func (a *API) checkPassword(r *http.Request, c credentials) (store.User, error) {
+	ip := a.clientIP(r)
+	if a.authBlocked(ip) {
+		return store.User{}, errTooMany
 	}
 	u, err := a.Store.UserByName(strings.TrimSpace(c.Username))
 	if err == nil && bcrypt.CompareHashAndPassword([]byte(u.PassHash()), []byte(c.Password)) == nil {
+		if u.Disabled {
+			return store.User{}, errors.New("this account is disabled")
+		}
 		return u, nil
 	}
-	a.tooManyFailures(ip, true)
+	a.recordFailure(ip)
 	return store.User{}, errors.New("wrong username or password")
 }
 
@@ -307,7 +430,11 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := a.checkPassword(r, c)
 	if err != nil {
-		fail(w, http.StatusUnauthorized, err.Error())
+		code := http.StatusUnauthorized
+		if err == errTooMany {
+			code = http.StatusTooManyRequests
+		}
+		fail(w, code, err.Error())
 		return
 	}
 	a.startSession(w, r, u)
@@ -346,6 +473,125 @@ func (a *API) logout(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) me(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, userOf(r)) }
 
+// ───────────────────────── users (admin) ─────────────────────────
+
+func (a *API) users(w http.ResponseWriter, r *http.Request) {
+	us, err := a.Store.Users()
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if us == nil {
+		us = []store.User{}
+	}
+	writeJSON(w, http.StatusOK, us)
+}
+
+func (a *API) createUser(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		credentials
+		IsAdmin bool `json:"isAdmin"`
+	}
+	if err := readJSON(r, &b); err != nil {
+		fail(w, http.StatusBadRequest, "bad request")
+		return
+	}
+	if err := b.valid(); err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	hash, _ := bcrypt.GenerateFromPassword([]byte(b.Password), bcrypt.DefaultCost)
+	u, err := a.Store.CreateUser(strings.TrimSpace(b.Username), string(hash), b.IsAdmin)
+	if err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, u)
+}
+
+func (a *API) targetUser(w http.ResponseWriter, r *http.Request) (store.User, bool) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	u, err := a.Store.UserByID(id)
+	if err != nil {
+		fail(w, http.StatusNotFound, "user not found")
+		return u, false
+	}
+	return u, true
+}
+
+// lastAdmin reports whether u is the only enabled admin.
+func (a *API) lastAdmin(u store.User) bool {
+	n, _ := a.Store.AdminCount()
+	return u.IsAdmin && !u.Disabled && n <= 1
+}
+
+func (a *API) updateUser(w http.ResponseWriter, r *http.Request) {
+	u, ok := a.targetUser(w, r)
+	if !ok {
+		return
+	}
+	var b struct {
+		Password *string `json:"password"`
+		Disabled *bool   `json:"disabled"`
+		IsAdmin  *bool   `json:"isAdmin"`
+	}
+	if err := readJSON(r, &b); err != nil {
+		fail(w, http.StatusBadRequest, "bad request")
+		return
+	}
+	self := u.ID == userOf(r).ID
+	if (b.Disabled != nil && *b.Disabled) || (b.IsAdmin != nil && !*b.IsAdmin) {
+		if self {
+			fail(w, http.StatusBadRequest, "you can't disable or demote your own account")
+			return
+		}
+		if a.lastAdmin(u) {
+			fail(w, http.StatusBadRequest, "keep at least one admin")
+			return
+		}
+	}
+	if b.Password != nil {
+		if len(*b.Password) < 10 {
+			fail(w, http.StatusBadRequest, "password must be at least 10 characters")
+			return
+		}
+		hash, _ := bcrypt.GenerateFromPassword([]byte(*b.Password), bcrypt.DefaultCost)
+		if err := a.Store.SetUserPassword(u.ID, string(hash)); err != nil {
+			fail(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if b.Disabled != nil {
+		_ = a.Store.SetUserDisabled(u.ID, *b.Disabled)
+	}
+	if b.IsAdmin != nil {
+		_ = a.Store.SetUserAdmin(u.ID, *b.IsAdmin)
+	}
+	u, _ = a.Store.UserByID(u.ID)
+	writeJSON(w, http.StatusOK, u)
+}
+
+func (a *API) deleteUser(w http.ResponseWriter, r *http.Request) {
+	u, ok := a.targetUser(w, r)
+	if !ok {
+		return
+	}
+	if u.ID == userOf(r).ID {
+		fail(w, http.StatusBadRequest, "you can't delete your own account")
+		return
+	}
+	if a.lastAdmin(u) {
+		fail(w, http.StatusBadRequest, "keep at least one admin")
+		return
+	}
+	if err := a.Store.DeleteUser(u.ID); err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	a.reload()
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ───────────────────────── settings & resolvers ─────────────────────────
 
 func (a *API) getSettings(w http.ResponseWriter, r *http.Request) {
@@ -366,6 +612,23 @@ func (a *API) putSettings(w http.ResponseWriter, r *http.Request) {
 	if next.RetentionDays < 1 || next.RetentionDays > 365 {
 		next.RetentionDays = 7
 	}
+	switch next.BlockBypass {
+	case policy.BypassOff, policy.BypassLAN, policy.BypassAll:
+	default:
+		next.BlockBypass = policy.BypassLAN
+	}
+	if v := strings.TrimSpace(next.LocalPTRResolver); v != "" {
+		host := v
+		if h, _, err := splitHostPort(v); err == nil {
+			host = h
+		}
+		addr, ok := netinfo.Parse(host)
+		if !ok || !netinfo.IsLAN(addr) {
+			fail(w, http.StatusBadRequest, "the reverse-DNS resolver must be a LAN address (e.g. your router 192.168.1.1)")
+			return
+		}
+		next.LocalPTRResolver = v
+	}
 	if _, ok := upstream.Find(next.Upstream); !ok {
 		if u, err := url.Parse(next.Upstream); err != nil || u.Scheme != "https" || u.Host == "" {
 			fail(w, http.StatusBadRequest, "upstream must be a known resolver or an https:// DoH URL")
@@ -375,6 +638,9 @@ func (a *API) putSettings(w http.ResponseWriter, r *http.Request) {
 	if err := a.Store.PutSettings(next); err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if next.Upstream != cur.Upstream || !slices.Equal(next.PlainFallback, cur.PlainFallback) {
+		a.Engine.ClearCache()
 	}
 	ConfigureUpstream(a.Upstream, next)
 	_ = a.Engine.Reload(next)
@@ -404,8 +670,10 @@ func (a *API) resolvers(w http.ResponseWriter, r *http.Request) {
 
 type listView struct {
 	lists.List
-	Enabled bool          `json:"enabled"`
-	Status  *lists.Status `json:"status,omitempty"`
+	Enabled      bool          `json:"enabled"`
+	InUse        bool          `json:"inUse"` // loaded because some policy needs it
+	CategoryName string        `json:"categoryName"`
+	Status       *lists.Status `json:"status,omitempty"`
 }
 
 func (a *API) getLists(w http.ResponseWriter, r *http.Request) {
@@ -413,10 +681,17 @@ func (a *API) getLists(w http.ResponseWriter, r *http.Request) {
 	for _, id := range a.Engine.Settings().EnabledLists {
 		enabled[id] = true
 	}
+	inUse := map[string]bool{}
+	for _, id := range a.Engine.ListIDs() {
+		inUse[id] = true
+	}
 	statuses := a.Lists.Status()
-	var out []listView
+	out := []listView{}
 	for _, l := range a.Lists.All() {
-		v := listView{List: l, Enabled: enabled[l.ID]}
+		if l.Owner != "" { // users' own lists are shown in their policy, not here
+			continue
+		}
+		v := listView{List: l, Enabled: enabled[l.ID], InUse: inUse[l.ID], CategoryName: lists.CategoryName(l.Category)}
 		if s, ok := statuses[l.ID]; ok {
 			v.Status = &s
 		}
@@ -435,11 +710,13 @@ func (a *API) putLists(w http.ResponseWriter, r *http.Request) {
 	}
 	known := map[string]bool{}
 	for _, l := range a.Lists.All() {
-		known[l.ID] = true
+		if l.Owner == "" {
+			known[l.ID] = true
+		}
 	}
-	var ids []string
+	ids := []string{}
 	for _, id := range body.Enabled {
-		if known[id] {
+		if known[id] && !slices.Contains(ids, id) {
 			ids = append(ids, id)
 		}
 	}
@@ -450,12 +727,13 @@ func (a *API) putLists(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = a.Engine.Reload(st)
-	go a.Lists.Rebuild(context.Background(), ids, 0)
+	a.rebuildIfNeeded(true)
 	writeJSON(w, http.StatusAccepted, map[string]any{"enabled": ids, "rebuilding": true})
 }
 
 func (a *API) refreshLists(w http.ResponseWriter, r *http.Request) {
-	go a.Lists.Rebuild(context.Background(), a.Engine.Settings().EnabledLists, time.Minute)
+	ids := a.Engine.ListIDs()
+	go a.Lists.Rebuild(context.Background(), ids, time.Minute)
 	writeJSON(w, http.StatusAccepted, map[string]bool{"refreshing": true})
 }
 
@@ -474,34 +752,34 @@ func (a *API) addCustomList(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(c.Name) == "" {
 		c.Name = u.Host
 	}
-	if c.Category == "" {
-		c.Category = "Custom"
-	}
+	c.Category = lists.NormalizeCategory(c.Category)
 	c.ID = "custom_" + store.RandomToken(4)
 	if err := a.Store.AddCustomList(c); err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	a.syncCustomLists()
+	a.reload()
 	writeJSON(w, http.StatusCreated, c)
 }
 
 func (a *API) deleteCustomList(w http.ResponseWriter, r *http.Request) {
-	_ = a.Store.DeleteCustomList(r.PathValue("id"))
-	a.syncCustomLists()
+	id := r.PathValue("id")
+	_ = a.Store.DeleteCustomList(id)
+	st := a.Engine.Settings()
+	if i := slices.Index(st.EnabledLists, id); i >= 0 {
+		st.EnabledLists = slices.Delete(slices.Clone(st.EnabledLists), i, i+1)
+		_ = a.Store.PutSettings(st)
+		_ = a.Engine.Reload(st)
+	}
+	a.reload()
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// syncCustomLists pushes custom lists from the store into the list manager.
-func (a *API) syncCustomLists() {
-	cs, _ := a.Store.CustomLists()
-	SyncCustomLists(a.Lists, cs)
-}
-
+// SyncCustomLists is kept for callers that set custom lists before the first Reload.
 func SyncCustomLists(m *lists.Manager, cs []store.CustomList) {
 	var ls []lists.List
 	for _, c := range cs {
-		ls = append(ls, lists.List{ID: c.ID, Name: c.Name, URL: c.URL, Category: c.Category, Group: "Custom", Custom: true})
+		ls = append(ls, lists.List{ID: c.ID, Name: c.Name, URL: c.URL, Category: lists.NormalizeCategory(c.Category), Group: "Custom", Custom: true})
 	}
 	m.SetCustom(ls)
 }
@@ -517,6 +795,9 @@ func (a *API) scopeFor(r *http.Request) (string, bool) {
 		return "default", u.IsAdmin
 	case s == "user":
 		return dnsserver.UserScope(u.ID), true
+	case strings.HasPrefix(s, "user:"):
+		id, err := strconv.ParseInt(strings.TrimPrefix(s, "user:"), 10, 64)
+		return s, err == nil && (u.IsAdmin || id == u.ID)
 	case strings.HasPrefix(s, "device:"):
 		d, err := a.Store.Device(strings.TrimPrefix(s, "device:"))
 		return s, err == nil && canManage(u, d)
@@ -534,6 +815,9 @@ func (a *API) getRules(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if rs == nil {
+		rs = []store.Rule{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"scope": scope, "rules": rs})
 }
@@ -580,7 +864,19 @@ func (a *API) check(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "that isn't a valid domain")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"domain": d, "decision": a.Engine.Decide(r.URL.Query().Get("device"), d)})
+	dev := r.URL.Query().Get("device")
+	if dev != "" && !userOf(r).IsAdmin {
+		dd, err := a.Store.Device(dev)
+		if err != nil || !canManage(userOf(r), dd) {
+			fail(w, http.StatusForbidden, "not your device")
+			return
+		}
+	}
+	client := r.URL.Query().Get("client")
+	if client == "" {
+		client = a.clientIP(r)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"domain": d, "decision": a.Engine.DecideFor(dev, client, d, 1)})
 }
 
 // ───────────────────────── devices ─────────────────────────
@@ -590,6 +886,7 @@ type deviceView struct {
 	DoHURL   string `json:"dohUrl,omitempty"`
 	DoTHost  string `json:"dotHost,omitempty"`
 	LastSeen int64  `json:"lastSeen"`
+	Owner    string `json:"owner,omitempty"`
 }
 
 func (a *API) view(d store.Device) deviceView {
@@ -612,9 +909,20 @@ func (a *API) getDevices(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	names := map[int64]string{}
+	if u.IsAdmin {
+		us, _ := a.Store.Users()
+		for _, x := range us {
+			names[x.ID] = x.Username
+		}
+	}
 	out := make([]deviceView, 0, len(ds))
 	for _, d := range ds {
-		out = append(out, a.view(d))
+		v := a.view(d)
+		if d.UserID != nil {
+			v.Owner = names[*d.UserID]
+		}
+		out = append(out, v)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -690,6 +998,11 @@ func (a *API) updateDevice(w http.ResponseWriter, r *http.Request) {
 		d.IPs = cleanIPs(b.IPs)
 	}
 	if b.Paused != nil {
+		// pausing switches off the network baseline for that device, so only the admin may do it
+		if !userOf(r).IsAdmin {
+			fail(w, http.StatusForbidden, "only the admin can pause protection")
+			return
+		}
 		d.Paused = *b.Paused
 	}
 	if err := a.Store.UpdateDevice(d); err != nil {
@@ -722,116 +1035,7 @@ func (a *API) linkDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.reload()
-	writeJSON(w, http.StatusOK, map[string]any{"device": a.view(d), "token": tok})
-}
-
-// linkApp lets an app sign in with username/password and register itself as a device.
-func (a *API) linkApp(w http.ResponseWriter, r *http.Request) {
-	var b struct {
-		credentials
-		DeviceName string `json:"deviceName"`
-	}
-	if err := readJSON(r, &b); err != nil {
-		fail(w, http.StatusBadRequest, "bad request")
-		return
-	}
-	u, err := a.checkPassword(r, b.credentials)
-	if err != nil {
-		fail(w, http.StatusUnauthorized, err.Error())
-		return
-	}
-	name := strings.TrimSpace(b.DeviceName)
-	if name == "" {
-		name = "ZeroLeakage app"
-	}
-	d, err := a.Store.CreateDevice(&u.ID, name, "app", nil)
-	if err != nil {
-		fail(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	tok, err := a.Store.LinkDevice(d.ID)
-	if err != nil {
-		fail(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	a.reload()
-	writeJSON(w, http.StatusCreated, map[string]any{"device": a.view(d), "token": tok})
-}
-
-// ───────────────────────── app sync ─────────────────────────
-
-type syncDoc struct {
-	Rules       []store.Rule `json:"rules"`
-	Lists       []string     `json:"lists"`
-	ServerTime  int64        `json:"serverTime"`
-	DeviceID    string       `json:"deviceId"`
-	DoHURL      string       `json:"dohUrl,omitempty"`
-	DoTHost     string       `json:"dotHost,omitempty"`
-}
-
-// syncScope: an app owned by a user syncs the user's rules (shared by all their devices);
-// an unowned device syncs its own.
-func syncScope(d store.Device) string {
-	if d.UserID != nil {
-		return dnsserver.UserScope(*d.UserID)
-	}
-	return "device:" + d.ID
-}
-
-func (a *API) getSync(w http.ResponseWriter, r *http.Request) {
-	d := deviceOf(r)
-	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
-	all, err := a.Store.Rules(syncScope(d), true)
-	if err != nil {
-		fail(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	var rs []store.Rule
-	for _, x := range all {
-		if x.UpdatedAt > since {
-			rs = append(rs, x)
-		}
-	}
-	v := a.view(d)
-	writeJSON(w, http.StatusOK, syncDoc{Rules: rs, Lists: a.Engine.Settings().EnabledLists, ServerTime: time.Now().UnixMilli(),
-		DeviceID: d.ID, DoHURL: v.DoHURL, DoTHost: v.DoTHost})
-}
-
-func (a *API) putSync(w http.ResponseWriter, r *http.Request) {
-	d := deviceOf(r)
-	var body struct {
-		Rules []store.Rule `json:"rules"`
-	}
-	if err := readJSON(r, &body); err != nil {
-		fail(w, http.StatusBadRequest, "bad request")
-		return
-	}
-	var clean []store.Rule
-	now := time.Now().UnixMilli()
-	for _, x := range body.Rules {
-		dom, ok := normalizeDomain(x.Domain)
-		if !ok || (x.Kind != "allow" && x.Kind != "block") {
-			continue
-		}
-		if x.UpdatedAt <= 0 || x.UpdatedAt > now+60_000 { // clamp clocks running ahead
-			x.UpdatedAt = now
-		}
-		x.Domain = dom
-		clean = append(clean, x)
-	}
-	if len(clean) > 10_000 {
-		fail(w, http.StatusRequestEntityTooLarge, "too many rules in one sync")
-		return
-	}
-	n, err := a.Store.MergeRules(syncScope(d), clean)
-	if err != nil {
-		fail(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if n > 0 {
-		a.reload()
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"applied": n, "serverTime": time.Now().UnixMilli()})
+	writeJSON(w, http.StatusOK, map[string]any{"device": a.view(d), "token": tok, "server": a.serverInfo()})
 }
 
 // ───────────────────────── stats & log ─────────────────────────
@@ -841,42 +1045,34 @@ func (a *API) stats(w http.ResponseWriter, r *http.Request) {
 	if hours <= 0 || hours > 24*30 {
 		hours = 24
 	}
-	st, err := a.Store.Stats(time.Now().Add(-time.Duration(hours) * time.Hour))
+	u := userOf(r)
+	st, err := a.Store.StatsFor(time.Now().Add(-time.Duration(hours)*time.Hour), a.ownDeviceIDs(u))
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"hours": hours, "stats": st,
-		"live": map[string]int64{
+	out := map[string]any{"hours": hours, "stats": st, "rules": a.Lists.Index().TotalRules()}
+	if u.IsAdmin {
+		out["live"] = map[string]int64{
 			"queries": a.Engine.Counters.Queries.Load(), "blocked": a.Engine.Counters.Blocked.Load(),
 			"cached": a.Engine.Counters.Cached.Load(), "errors": a.Engine.Counters.Errors.Load(),
-		},
-		"rules": a.Lists.Index().TotalRules(),
-	})
+		}
+	} else {
+		out["live"] = map[string]int64{"queries": st.Total, "blocked": st.Blocked}
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (a *API) querylog(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	f := store.QueryFilter{DeviceID: q.Get("device"), Search: q.Get("search")}
+	f := store.QueryFilter{DeviceID: q.Get("device"), Search: q.Get("search"), Client: q.Get("client")}
 	f.Limit, _ = strconv.Atoi(q.Get("limit"))
 	f.BeforeID, _ = strconv.ParseInt(q.Get("before"), 10, 64)
 	if b := q.Get("blocked"); b != "" {
 		v := b == "1" || b == "true"
 		f.Blocked = &v
 	}
-	u := userOf(r)
-	if !u.IsAdmin { // users only see their own devices
-		ds, _ := a.Store.Devices(&u.ID)
-		own := map[string]bool{}
-		for _, d := range ds {
-			own[d.ID] = true
-		}
-		if f.DeviceID == "" || !own[f.DeviceID] {
-			writeJSON(w, http.StatusOK, []store.QueryEntry{})
-			return
-		}
-	}
+	f.Devices = a.ownDeviceIDs(userOf(r)) // users only see their own devices
 	rows, err := a.Store.Queries(f)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
@@ -888,11 +1084,25 @@ func (a *API) querylog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rows)
 }
 
-func (a *API) users(w http.ResponseWriter, r *http.Request) {
-	us, err := a.Store.Users()
+func (a *API) reports(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	hours, _ := strconv.Atoi(q.Get("hours"))
+	if hours <= 0 || hours > 24*90 {
+		hours = 24
+	}
+	bucket := time.Hour
+	if hours > 48 {
+		bucket = 24 * time.Hour
+	}
+	u := userOf(r)
+	f := store.ReportFilter{Since: time.Now().Add(-time.Duration(hours) * time.Hour), Bucket: bucket, DeviceID: q.Get("device"), Devices: a.ownDeviceIDs(u)}
+	if u.IsAdmin {
+		f.Client = q.Get("client")
+	}
+	rep, err := a.Store.Report(f)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, us)
+	writeJSON(w, http.StatusOK, map[string]any{"hours": hours, "report": rep})
 }

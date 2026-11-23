@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Code shared by the desktop app, the ZeroLeakage Core service and the tests:
+       the named-pipe contract and the ZeroLeakage Server link/sync logic (no WPF here). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>ZeroLeakage.Shared</RootNamespace>
+    <AssemblyName>ZeroLeakage.Shared</AssemblyName>
+    <Product>ZeroLeakage</Product>
+    <Company>ZeroLeakage</Company>
+    <Version>1.4.0</Version>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.15" />
+  </ItemGroup>
+
+</Project>

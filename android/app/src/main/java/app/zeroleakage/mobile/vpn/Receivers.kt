@@ -31,6 +31,7 @@ object PromptNotifier {
             ZeroLeakage.pendingPrompts.remove(pkg)
             return
         }
+        val advice = app.zeroleakage.mobile.data.AppAdvice.forPackage(context, pkg)
         fun action(decision: String, code: Int) = PendingIntent.getBroadcast(
             context, notificationId(pkg) * 4 + code,
             Intent(context, PromptActionReceiver::class.java).putExtra(EXTRA_PKG, pkg).putExtra(EXTRA_DECISION, decision),
@@ -40,10 +41,11 @@ object PromptNotifier {
             .setSmallIcon(R.drawable.ic_stat_shield)
             .setColor(0xFF7B61FF.toInt())
             .setContentTitle("$label wants to connect")
-            .setContentText("→ $domain · blocked until you decide")
+            .setContentText("${advice.level.label}: ${advice.level.action} · → $domain")
             .setStyle(NotificationCompat.BigTextStyle().bigText(
-                "→ $domain\nBlocked until you decide. Allow = it works and never asks again. " +
-                    "Block = cut off for good. Swipe away = stays blocked, asks again in 1 hour."))
+                "${advice.level.label.uppercase()} · ${advice.reason}\n→ $domain\n" +
+                    "Allow = it works (here and in Total Zero-Leak) and never asks again. Block = cut off for good. " +
+                    "Swipe away = stays blocked, asks again in 1 hour."))
             .setOnlyAlertOnce(true)
             .setSubText("Strict Guard")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -107,6 +109,13 @@ object Feedback {
             }
             vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK))
         }
+    }
+}
+
+/** You swiped the running-status notification away (Android 14+): keep it hidden until the shield restarts. */
+class StatusDismissedReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        ZeroLeakVpnService.statusHiddenBySwipe = true
     }
 }
 

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/shatheitguy/ZeroLeakage/server/internal/dnsserver"
+	"github.com/shatheitguy/ZeroLeakage/server/internal/guard"
 	"github.com/shatheitguy/ZeroLeakage/server/internal/lists"
 	"github.com/shatheitguy/ZeroLeakage/server/internal/store"
 	"github.com/shatheitguy/ZeroLeakage/server/internal/upstream"
@@ -37,11 +38,19 @@ func newServer(t *testing.T) *httptest.Server {
 	if err := e.Reload(settings); err != nil {
 		t.Fatal(err)
 	}
-	a := &API{Engine: e, Store: st, Lists: lm, Upstream: up, Log: log, Version: "test"}
+	g := guard.New(st, dir, log)
+	cfg := guard.DefaultConfig()
+	cfg.DNSFeeds, cfg.ExportFeeds = []string{}, []string{} // no downloads in tests
+	_, _ = g.SetConfig(cfg)
+	e.Guard = g
+	a := &API{Engine: e, Store: st, Lists: lm, Upstream: up, Guard: g, Log: log, Version: "test"}
 	srv := httptest.NewServer(a.Handler())
 	t.Cleanup(srv.Close)
+	lastAPI = a
 	return srv
 }
+
+var lastAPI *API
 
 type client struct {
 	t    *testing.T

@@ -32,6 +32,18 @@ object OtherVpnWatcher {
     const val CHANNEL_ALERTS = "shield_alerts"
     const val EXTRA_RESUME = "app.zeroleakage.mobile.RESUME_SHIELD"
     private const val NOTIF_ID = 2
+    /** Start another VPN within this long after turning the shield off and it counts as a pause. */
+    private const val PAUSE_WINDOW_MS = 5 * 60_000L
+
+    /** True when another app's VPN is active right now. */
+    fun anyVpnActive(context: Context): Boolean {
+        val cm = context.getSystemService(ConnectivityManager::class.java)
+        @Suppress("DEPRECATION")
+        return cm.allNetworks.any {
+            val caps = cm.getNetworkCapabilities(it)
+            caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true && caps.ownerUid != android.os.Process.myUid()
+        }
+    }
 
     private val vpnNetworks = ConcurrentHashMap.newKeySet<Network>()
     @Volatile private var registered = false
@@ -40,8 +52,10 @@ object OtherVpnWatcher {
         if (registered) return
         val app = context.applicationContext
         val nm = app.getSystemService(NotificationManager::class.java)
+        ZeroLeakVpnService.ensureChannels(app)   // creates the channel groups
         nm.createNotificationChannel(NotificationChannel(CHANNEL_ALERTS, "Shield alerts", NotificationManager.IMPORTANCE_DEFAULT).apply {
-            description = "When another VPN app takes over, and when the shield can come back"
+            description = "When another VPN (e.g. WireGuard) takes over, and when the shield can come back. Keep this on."
+            group = ZeroLeakVpnService.GROUP_IMPORTANT
         })
         val cm = app.getSystemService(ConnectivityManager::class.java)
         val request = NetworkRequest.Builder()
@@ -50,10 +64,24 @@ object OtherVpnWatcher {
             .build()
         runCatching {
             cm.registerNetworkCallback(request, object : ConnectivityManager.NetworkCallback() {
-                override fun onAvailable(network: Network) { vpnNetworks.add(network) }
+                /** Only other apps' VPNs are tracked; our own tunnel is ignored. */
+                private fun isOurs(network: Network): Boolean =
+                    cm.getNetworkCapabilities(network)?.ownerUid == android.os.Process.myUid()
+
+                override fun onAvailable(network: Network) {
+                    if (isOurs(network)) return
+                    vpnNetworks.add(network)
+                    // Another VPN came up shortly after you switched the shield off:
+                    // treat it as "paused for that VPN" so the shield comes back when it disconnects.
+                    if (!ZeroLeakage.vpnRunning.value && ZeroLeakage.method.value == ZeroLeakage.Method.FULL &&
+                        System.currentTimeMillis() - ZeroLeakage.lastUserStopAt < PAUSE_WINDOW_MS) {
+                        ZeroLeakage.setTakenOver(true)
+                    }
+                }
+
                 override fun onLost(network: Network) {
-                    vpnNetworks.remove(network)
-                    if (vpnNetworks.isEmpty() && ZeroLeakage.takenOver.value && !ZeroLeakage.vpnRunning.value &&
+                    val wasOther = vpnNetworks.remove(network)
+                    if (wasOther && vpnNetworks.isEmpty() && ZeroLeakage.takenOver.value && !ZeroLeakage.vpnRunning.value &&
                         ZeroLeakage.method.value == ZeroLeakage.Method.FULL) {
                         tryResume(app)
                     }
@@ -72,12 +100,10 @@ object OtherVpnWatcher {
 
     /** The other VPN is gone: come back on our own if Android allows it, otherwise ask with one tap. */
     fun tryResume(context: Context) {
-        if (VpnService.prepare(context) == null) {
-            ZeroLeakVpnService.start(context)
-            cancel(context)
-        } else {
-            notify(context, "Your other VPN is off", "Tap to turn the ZeroLeakage shield back on.")
-        }
+        // Android remembers your VPN consent, so usually we can come straight back without asking.
+        val started = VpnService.prepare(context) == null && runCatching { ZeroLeakVpnService.start(context) }.isSuccess
+        if (started) cancel(context)
+        else notify(context, "Your other VPN is off", "Tap to turn the ZeroLeakage shield back on.")
     }
 
     fun cancel(context: Context) {

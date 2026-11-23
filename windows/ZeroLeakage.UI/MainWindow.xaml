@@ -176,35 +176,28 @@
                                         <TextBlock Style="{StaticResource Text.Icon}" FontSize="17" Text="&#xE77B;" Foreground="{DynamicResource Brush.ModeAccent}" />
                                     </Grid>
                                     <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
-                                        <TextBlock FontSize="14" FontWeight="SemiBold" Text="Local profile" />
+                                        <TextBlock FontSize="14" FontWeight="SemiBold" Text="{Binding Account.ProfileTitle}" TextTrimming="CharacterEllipsis" />
                                         <TextBlock Margin="0,2,0,0" Style="{StaticResource Text.Caption}" TextWrapping="Wrap"
-                                                   Text="Not signed in · rules stay on this PC" />
+                                                   Text="{Binding Account.ProfileSubtitle}" />
                                     </StackPanel>
                                 </Grid>
 
-                                <!-- Account & sync (information only for now; sign-in will always be optional) -->
-                                <Border Margin="0,0,0,4" Padding="10,8" CornerRadius="9" Background="{StaticResource Brush.Inset}"
-                                        BorderBrush="{StaticResource Brush.Border}" BorderThickness="1"
-                                        ToolTip="Sign-in will always be optional. ZeroLeakage works fully offline without an account.">
+                                <!-- Account & sync: optional link to the user's own ZeroLeakage Server -->
+                                <Button Style="{StaticResource Button.MenuItem}" Command="{Binding Account.OpenCommand}"
+                                        ToolTip="Optional. ZeroLeakage works fully offline without a server.">
                                     <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="28" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Style="{StaticResource Text.Icon}" FontSize="14" Text="&#xE895;" HorizontalAlignment="Left"
-                                                   VerticalAlignment="Top" Margin="0,2,0,0" Foreground="{StaticResource Brush.TextMuted}" />
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="28" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <TextBlock Style="{StaticResource Text.Icon}" FontSize="14" HorizontalAlignment="Left" Text="&#xE895;" Foreground="{StaticResource Brush.TextSecondary}" />
                                         <StackPanel Grid.Column="1">
-                                            <TextBlock FontSize="13" Text="Account &amp; sync" Foreground="{StaticResource Brush.TextSecondary}" />
-                                            <TextBlock Margin="0,2,0,0" Style="{StaticResource Text.Caption}" TextWrapping="Wrap"
-                                                       Text="Sign in to your ZeroLeakage server (optional) · coming soon" />
+                                            <TextBlock Text="Account &amp; sync" />
+                                            <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding Account.MenuCaption}" TextTrimming="CharacterEllipsis" />
                                         </StackPanel>
-                                        <Border Grid.Column="2" Style="{StaticResource Badge}" Margin="8,0,0,0" VerticalAlignment="Top"
-                                                Background="{StaticResource Brush.VioletSoft}" BorderBrush="{StaticResource Brush.VioletLine}">
-                                            <TextBlock Style="{StaticResource Badge.Text}" FontSize="9.5" Foreground="{StaticResource Brush.Violet}" Text="SOON" />
+                                        <Border Grid.Column="2" Style="{StaticResource Badge}" Margin="8,0,0,0"
+                                                Visibility="{Binding Account.IsLinked, Converter={StaticResource BoolToVisible}}">
+                                            <TextBlock Style="{StaticResource Badge.Text}" FontSize="9.5" Text="LINKED" />
                                         </Border>
                                     </Grid>
-                                </Border>
+                                </Button>
 
                                 <Rectangle Style="{StaticResource Divider}" Margin="6,6" />
 
@@ -484,6 +477,220 @@
                                 </Button>
                             </StackPanel>
                         </Grid>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <!-- ═══════════════ Account & sync ═══════════════ -->
+            <Grid Grid.RowSpan="2" Grid.ColumnSpan="2" Background="{StaticResource Brush.Overlay}" DataContext="{Binding Account}"
+                  Visibility="{Binding IsOpen, Converter={StaticResource BoolToVisible}}">
+                <Border Style="{StaticResource Card}" Width="640" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="24"
+                        Padding="26,22" Background="{StaticResource Brush.SurfaceRaised}" BorderBrush="{StaticResource Brush.BorderStrong}">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.7" Color="Black" />
+                    </Border.Effect>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid Width="44" Height="44">
+                                <Border CornerRadius="12" Background="{DynamicResource Brush.ModeAccentSoft}" />
+                                <TextBlock Style="{StaticResource Text.Icon}" FontSize="18" Text="&#xE895;" Foreground="{DynamicResource Brush.ModeAccent}" />
+                            </Grid>
+                            <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
+                                <TextBlock FontSize="19" FontWeight="SemiBold" Text="Account &amp; sync" />
+                                <TextBlock Margin="0,2,0,0" Style="{StaticResource Text.Caption}" TextWrapping="Wrap"
+                                           Text="Optional. Link this PC to your own ZeroLeakage Server so it follows your network's protection. Nothing goes to any third party." />
+                            </StackPanel>
+                            <Button Grid.Column="2" VerticalAlignment="Top" Style="{StaticResource Button.Icon}" Content="&#xE8BB;" FontSize="11"
+                                    Command="{Binding CloseCommand}" ToolTip="Close" />
+                        </Grid>
+
+                        <ScrollViewer Grid.Row="1" Margin="0,18,0,0" VerticalScrollBarVisibility="Auto" MaxHeight="470">
+                            <StackPanel Margin="0,0,6,0">
+                                <!-- ───── not linked: link form ───── -->
+                                <StackPanel Visibility="{Binding IsNotLinked, Converter={StaticResource BoolToVisible}}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <RadioButton Style="{StaticResource Radio.Chip}" GroupName="LinkHow" Content="Pairing code" Margin="0,0,6,0"
+                                                     IsChecked="{Binding UsePairingCode}" />
+                                        <RadioButton Style="{StaticResource Radio.Chip}" GroupName="LinkHow" Content="Sign in" IsChecked="{Binding UsePassword}" />
+                                    </StackPanel>
+                                    <TextBlock Margin="0,14,0,6" Style="{StaticResource Text.Overline}" Text="SERVER ADDRESS" />
+                                    <TextBox Style="{StaticResource TextBox.Input}" Tag="https://zeroleakage.example.com"
+                                             Text="{Binding ServerAddress, UpdateSourceTrigger=PropertyChanged}" />
+                                    <TextBlock Margin="2,6,0,0" Style="{StaticResource Text.Caption}" Foreground="{StaticResource Brush.Amber}" TextWrapping="Wrap"
+                                               Text="{Binding AddressWarning}" Visibility="{Binding AddressWarning, Converter={StaticResource NotNullToVisible}}" />
+
+                                    <StackPanel Visibility="{Binding UsePairingCode, Converter={StaticResource BoolToVisible}}">
+                                        <TextBlock Margin="0,14,0,6" Style="{StaticResource Text.Overline}" Text="PAIRING CODE" />
+                                        <TextBox Style="{StaticResource TextBox.Input}" Tag="ZL-XXXX-XXXX" CharacterCasing="Upper"
+                                                 Text="{Binding PairingCode, UpdateSourceTrigger=PropertyChanged}" />
+                                        <TextBlock Margin="2,6,0,0" Style="{StaticResource Text.Caption}" TextWrapping="Wrap"
+                                                   Text="Create a code on your server's Devices page. Codes work once and expire quickly." />
+                                    </StackPanel>
+                                    <StackPanel Visibility="{Binding UsePassword, Converter={StaticResource BoolToVisible}}">
+                                        <TextBlock Margin="0,14,0,6" Style="{StaticResource Text.Overline}" Text="USERNAME" />
+                                        <TextBox Style="{StaticResource TextBox.Input}" Tag="your server username" Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" />
+                                        <TextBlock Margin="0,12,0,6" Style="{StaticResource Text.Overline}" Text="PASSWORD" />
+                                        <PasswordBox x:Name="AccountPasswordBox" Style="{StaticResource PasswordBox.Input}" />
+                                        <TextBlock Margin="2,6,0,0" Style="{StaticResource Text.Caption}" TextWrapping="Wrap"
+                                                   Text="Your password is sent once to your server and never stored. ZeroLeakage keeps only a device token, encrypted for your Windows account." />
+                                    </StackPanel>
+
+                                    <TextBlock Margin="2,12,0,0" Style="{StaticResource Text.Caption}" Foreground="{StaticResource Brush.Crimson}" TextWrapping="Wrap"
+                                               Text="{Binding Error}" Visibility="{Binding Error, Converter={StaticResource NotNullToVisible}}" />
+                                    <StackPanel Margin="0,16,0,0" Orientation="Horizontal">
+                                        <Button Style="{StaticResource Button.Primary}" Content="Link this PC" Command="{Binding LinkCommand}" />
+                                        <ProgressBar Margin="14,0,0,0" Width="120" Style="{StaticResource ProgressBar.Thin}" IsIndeterminate="{Binding IsBusy}"
+                                                     Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisible}}" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <!-- ───── linked: who, where, status ───── -->
+                                <StackPanel Visibility="{Binding IsLinked, Converter={StaticResource BoolToVisible}}">
+                                    <TextBlock Style="{StaticResource Text.Overline}" Text="SIGNED IN" />
+                                    <Border Style="{StaticResource Card.Inset}" Margin="0,8,0,0" Padding="14,8">
+                                        <StackPanel>
+                                            <StackPanel.Resources>
+                                                <Style TargetType="Grid"><Setter Property="Margin" Value="0,4" /></Style>
+                                            </StackPanel.Resources>
+                                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="120" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                <TextBlock Style="{StaticResource Text.Caption}" FontSize="12" Text="User" />
+                                                <TextBlock Grid.Column="1" Style="{StaticResource Text.Mono}" FontSize="11.5" Text="{Binding SignedInAs}" /></Grid>
+                                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="120" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                <TextBlock Style="{StaticResource Text.Caption}" FontSize="12" Text="This device" />
+                                                <TextBlock Grid.Column="1" Style="{StaticResource Text.Mono}" FontSize="11.5" Text="{Binding DeviceName}" /></Grid>
+                                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="120" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                <TextBlock Style="{StaticResource Text.Caption}" FontSize="12" Text="Server" />
+                                                <TextBlock Grid.Column="1" Style="{StaticResource Text.Mono}" FontSize="11.5" TextTrimming="CharacterEllipsis">
+                                                    <Run Text="{Binding ServerName, Mode=OneWay}" /><Run Text="  " /><Run Text="{Binding ServerUrl, Mode=OneWay}" Foreground="{StaticResource Brush.TextMuted}" />
+                                                </TextBlock></Grid>
+                                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="120" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                <TextBlock Style="{StaticResource Text.Caption}" FontSize="12" Text="Last sync" />
+                                                <TextBlock Grid.Column="1" Style="{StaticResource Text.Mono}" FontSize="11.5" Text="{Binding LastSyncText}" /></Grid>
+                                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="120" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                <TextBlock Style="{StaticResource Text.Caption}" FontSize="12" Text="Policy version" />
+                                                <TextBlock Grid.Column="1" Style="{StaticResource Text.Mono}" FontSize="11.5" Text="{Binding PolicyVersionText}" /></Grid>
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Margin="2,8,0,0" Style="{StaticResource Text.Caption}" Foreground="{StaticResource Brush.Crimson}" TextWrapping="Wrap"
+                                               Text="{Binding SyncError}" Visibility="{Binding SyncError, Converter={StaticResource NotNullToVisible}}" />
+                                    <TextBlock Margin="2,8,0,0" Style="{StaticResource Text.Caption}" Foreground="{StaticResource Brush.Amber}" TextWrapping="Wrap"
+                                               Text="{Binding Notice}" Visibility="{Binding Notice, Converter={StaticResource NotNullToVisible}}" />
+                                    <StackPanel Margin="0,12,0,0" Orientation="Horizontal">
+                                        <Button Style="{StaticResource Button.Outline}" Content="Sync now" Margin="0,0,10,0" Command="{Binding SyncNowCommand}" />
+                                        <Button Style="{StaticResource Button.Danger}" Content="Unlink" Command="{Binding UnlinkCommand}" />
+                                    </StackPanel>
+
+                                    <!-- Server DNS (off by default) -->
+                                    <Border Style="{StaticResource Card.Inset}" Margin="0,16,0,0">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock FontSize="13" FontWeight="SemiBold" Text="Use the server as this PC's DNS" />
+                                                <TextBlock Margin="0,2,0,0" Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Text="{Binding ServerDnsText}" />
+                                            </StackPanel>
+                                            <ToggleButton Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Top" Style="{StaticResource Toggle.Switch}"
+                                                          IsChecked="{Binding UseServerDns}" IsEnabled="{Binding CanUseServerDns}" />
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- What the server manages -->
+                                    <TextBlock Margin="0,18,0,0" Style="{StaticResource Text.Overline}" Text="YOUR NETWORK'S POLICY" />
+                                    <TextBlock Margin="0,4,0,8" Style="{StaticResource Text.Caption}" TextWrapping="Wrap"
+                                               Text="Items marked SET BY ADMIN are your network's baseline: they always apply and can't be switched off here. You can add stricter settings; they sync to your other devices only." />
+                                    <TextBlock Style="{StaticResource Text.Caption}" FontSize="12" Text="Filter lists set by admin" />
+                                    <ItemsControl Margin="0,6,0,10" ItemsSource="{Binding LockedLists}">
+                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Style="{StaticResource Badge}" Margin="0,0,6,6" Background="{StaticResource Brush.VioletSoft}" BorderBrush="{StaticResource Brush.VioletLine}">
+                                                    <TextBlock Style="{StaticResource Badge.Text}" Foreground="{StaticResource Brush.Violet}" Text="{Binding Id, StringFormat={}{0} · SET BY ADMIN}" />
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock Style="{StaticResource Text.Caption}" FontSize="12" Text="Blocked services" />
+                                    <ItemsControl Margin="0,6,0,6" ItemsSource="{Binding Services}">
+                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border x:Name="Chip" Style="{StaticResource Badge}" Margin="0,0,6,6" Padding="8,2,2,2">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock x:Name="ChipText" Style="{StaticResource Badge.Text}" VerticalAlignment="Center" Text="{Binding Id}" />
+                                                        <TextBlock x:Name="Lock" Margin="6,0,6,0" Style="{StaticResource Badge.Text}" FontSize="9" VerticalAlignment="Center"
+                                                                   Foreground="{StaticResource Brush.Violet}" Text="SET BY ADMIN" Visibility="Collapsed" />
+                                                        <Button x:Name="Remove" Style="{StaticResource Button.Icon}" Width="18" Height="18" FontSize="8" Content="&#xE8BB;"
+                                                                ToolTip="Stop blocking (your own setting)"
+                                                                Command="{Binding DataContext.RemoveServiceCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                CommandParameter="{Binding}" />
+                                                    </StackPanel>
+                                                </Border>
+                                                <DataTemplate.Triggers>
+                                                    <DataTrigger Binding="{Binding IsLocked}" Value="True">
+                                                        <Setter TargetName="Remove" Property="Visibility" Value="Collapsed" />
+                                                        <Setter TargetName="Lock" Property="Visibility" Value="Visible" />
+                                                        <Setter TargetName="Chip" Property="Background" Value="{StaticResource Brush.VioletSoft}" />
+                                                        <Setter TargetName="Chip" Property="BorderBrush" Value="{StaticResource Brush.VioletLine}" />
+                                                        <Setter TargetName="ChipText" Property="Foreground" Value="{StaticResource Brush.Violet}" />
+                                                    </DataTrigger>
+                                                </DataTemplate.Triggers>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <Grid Margin="0,0,0,10">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <TextBox Style="{StaticResource TextBox.Input}" Tag="block another service (id from your server, e.g. tiktok)"
+                                                 Text="{Binding ServiceInput, UpdateSourceTrigger=PropertyChanged}" />
+                                        <Button Grid.Column="1" Margin="8,0,0,0" Style="{StaticResource Button.Chip}" Content="Block" Command="{Binding AddServiceCommand}" />
+                                    </Grid>
+                                    <TextBlock Style="{StaticResource Text.Caption}" FontSize="12" Text="Blocked categories" />
+                                    <ItemsControl Margin="0,6,0,10" ItemsSource="{Binding Categories}">
+                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Style="{StaticResource Badge}" Margin="0,0,6,6">
+                                                    <TextBlock Style="{StaticResource Badge.Text}" Text="{Binding Id}" />
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <Border Style="{StaticResource Card.Inset}" Padding="14,8">
+                                        <StackPanel>
+                                            <StackPanel.Resources>
+                                                <Style TargetType="Grid"><Setter Property="Margin" Value="0,3" /></Style>
+                                            </StackPanel.Resources>
+                                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="140" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                <TextBlock Style="{StaticResource Text.Caption}" FontSize="12" Text="Safe search" />
+                                                <TextBlock Grid.Column="1" Style="{StaticResource Text.Mono}" FontSize="11.5" Text="{Binding SafeSearchText}" /></Grid>
+                                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="140" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                <TextBlock Style="{StaticResource Text.Caption}" FontSize="12" Text="Block mode" />
+                                                <TextBlock Grid.Column="1" Style="{StaticResource Text.Mono}" FontSize="11.5" Text="{Binding BlockModeText}" /></Grid>
+                                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="140" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                <TextBlock Style="{StaticResource Text.Caption}" FontSize="12" Text="Schedules" />
+                                                <TextBlock Grid.Column="1" Style="{StaticResource Text.Mono}" FontSize="11.5" Text="{Binding SchedulesText}" /></Grid>
+                                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="140" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                <TextBlock Style="{StaticResource Text.Caption}" FontSize="12" Text="Guard" />
+                                                <TextBlock Grid.Column="1" Style="{StaticResource Text.Mono}" FontSize="11.5" Text="{Binding GuardPolicyText}" /></Grid>
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Margin="2,8,0,0" Style="{StaticResource Text.Caption}" Foreground="{StaticResource Brush.Amber}" TextWrapping="Wrap"
+                                               Text="Your server has turned blocking off for this device (bypass)."
+                                               Visibility="{Binding BypassBlocking, Converter={StaticResource BoolToVisible}}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <Button Grid.Row="2" Margin="0,18,0,0" HorizontalAlignment="Left" Style="{StaticResource Button.Ghost}" Content="Close" Command="{Binding CloseCommand}" />
                     </Grid>
                 </Border>
             </Grid>

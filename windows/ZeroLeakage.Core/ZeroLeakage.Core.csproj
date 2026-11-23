@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <!-- ZeroLeakage Core: Windows service (LocalSystem, auto start) that runs Guard.
+       Published self-contained (win-x64) into the app's Core\ folder by ..\build-msi.ps1. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>ZeroLeakage.Core</RootNamespace>
+    <AssemblyName>ZeroLeakage.Core</AssemblyName>
+    <Product>ZeroLeakage</Product>
+    <Company>ZeroLeakage</Company>
+    <Version>1.4.0</Version>
+    <ApplicationIcon>..\ZeroLeakage.UI\Assets\ZeroLeakage.ico</ApplicationIcon>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <!-- Self-contained only when publishing, so the test project can reference this exe. -->
+    <PublishSelfContained>true</PublishSelfContained>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- A small, quiet background service. -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <UserSecretsId></UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.15" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.15" />
+    <PackageReference Include="System.Diagnostics.EventLog" Version="10.0.15" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ZeroLeakage.Shared\ZeroLeakage.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ZeroLeakage.Core.Tests" />
+  </ItemGroup>
+
+</Project>

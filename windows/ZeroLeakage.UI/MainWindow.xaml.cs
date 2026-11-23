@@ -26,6 +26,10 @@ public partial class MainWindow : Window
         DataContext = viewModel;
         _settings = settings;
 
+        // Account & sync: the password goes from the PasswordBox to the view-model only; it's cleared after each attempt.
+        AccountPasswordBox.PasswordChanged += (_, _) => viewModel.Account.Password = AccountPasswordBox.Password;
+        viewModel.Account.PasswordCleared += () => AccountPasswordBox.Clear();
+
         SourceInitialized += (_, _) => WindowEffects.Apply(this);
         StateChanged += (_, _) => SyncMaximizedState();
         Loaded += (_, _) => StartStatusPulse();

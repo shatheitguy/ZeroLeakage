@@ -1,5 +1,6 @@
 package app.zeroleakage.mobile.ui.components
 
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -285,3 +286,23 @@ fun formatCount(n: Long): String = when {
     else -> String.format("%,d", n)
 }
 
+
+/**
+ * A clock that ticks every [periodMs] only while the app is on screen (STARTED); it stops completely in the
+ * background, so screens that show live time or status don't wake the phone when you're not looking.
+ */
+@Composable
+fun rememberVisibleTicker(periodMs: Long, enabled: Boolean = true): Long {
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    val now = androidx.compose.runtime.remember { androidx.compose.runtime.mutableLongStateOf(System.currentTimeMillis()) }
+    androidx.compose.runtime.LaunchedEffect(lifecycle, periodMs, enabled) {
+        if (!enabled) return@LaunchedEffect
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                now.longValue = System.currentTimeMillis()
+                kotlinx.coroutines.delay(periodMs)
+            }
+        }
+    }
+    return now.longValue
+}

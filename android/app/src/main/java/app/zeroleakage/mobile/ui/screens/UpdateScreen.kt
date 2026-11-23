@@ -93,7 +93,7 @@ fun UpdateScreen(onClose: () -> Unit) {
         }
 
         Column(
-            Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -117,7 +117,8 @@ fun UpdateScreen(onClose: () -> Unit) {
             }
             Text(title, style = Zl.mono.copy(fontSize = 30.sp, fontWeight = FontWeight.Bold,
                 color = if (install is Updates.Install.Failed) Zl.Crimson else Zl.TextPrimary))
-            Text(sub, fontSize = 13.sp, color = Zl.TextSecondary)
+            Text(sub, fontSize = 13.sp, color = Zl.TextSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.fillMaxWidth())
 
             // Verification checklist
             val step = (install as? Updates.Install.Verifying)?.step ?: if (install == Updates.Install.Installing) 5 else -1

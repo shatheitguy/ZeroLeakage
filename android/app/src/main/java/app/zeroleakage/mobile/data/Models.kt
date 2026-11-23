@@ -11,7 +11,7 @@ enum class ProtectionMode(val number: Int, val title: String, val short: String,
     ),
     LOCKDOWN(
         3, "Total Zero-Leak", "TOTAL ZERO-LEAK",
-        "Hard lockdown. Only apps you pin may reach the internet — every other lookup on the device is dropped.",
+        "Hard lockdown. Only apps you've allowed may reach the internet; everything else is blocked silently, with no prompts.",
     ),
 }
 
@@ -72,6 +72,8 @@ data class AppRule(
     val blocked: Long = 0,
 ) {
     val isKilled: Boolean get() = !wifi && !mobile
+    /** Allowed in Strict Guard and Total Zero-Leak ("pinned" is the old name for the same thing). */
+    val isAllowed: Boolean get() = approved || pinned
 }
 
 data class Stats(
@@ -107,7 +109,7 @@ enum class BlockKind(val title: String, val explain: String) {
             category.startsWith("DNSSEC") -> DNSSEC
             category == "User Blocklist" -> USER
             category == "Telemetry" -> TELEMETRY
-            category == "Malware" -> MALWARE
+            category == "Malware" || category == "Malicious IP" -> MALWARE
             category in setOf("Adult", "Gambling", "Social") -> PARENTAL
             byFilter -> TRACKERS
             else -> APPS

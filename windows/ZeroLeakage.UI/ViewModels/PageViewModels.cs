@@ -152,6 +152,11 @@ public sealed class DnsTelemetryViewModel : ObservableObject
         RemoveDomainCommand = new RelayCommand(p => { if (p is string d) _filters.RemoveBlock(d); });
         AddAllowCommand = new RelayCommand(() =>
         {
+            if (_filters.AllowLockReason(NewAllow) is { } locked)
+            {
+                _shell.ShowSnackbar(locked);   // the admin's baseline can't be unblocked from the app
+                return;
+            }
             var d = _filters.Allow(NewAllow);
             if (d is null) return;
             NewAllow = "";
@@ -200,6 +205,26 @@ public sealed class DnsTelemetryViewModel : ObservableObject
         WipeLogsCommand = new AsyncRelayCommand(WipeAsync);
 
         engine.StatsUpdated += (_, s) => Ui.Post(() => Latency = s.DohLatencyMs);
+        _filters.ManagedChanged += (_, _) => Ui.Post(RaiseManaged);
+    }
+
+    // ───────────── ZeroLeakage Server management ─────────────
+    public bool IsManaged => _filters.IsManaged;
+    public string ManagedTitle => $"Managed by {_filters.ManagedBy}";
+    public string ManagedText => _filters.BypassBlocking
+        ? "Your server has turned DNS blocking off for this device. Lists and rules follow the server."
+        : "Filter lists and rules follow your ZeroLeakage Server. Lists marked SET BY ADMIN are your network's baseline and can't be switched off; " +
+          "anything you add here (lists, allow/block rules) syncs to your other devices. " +
+          (_filters.ManagedBlockCount > 0 ? $"{_filters.ManagedBlockCount:N0} more domains are blocked by the server's services and categories." : "");
+    public bool HasLockedDomains => _filters.LockedBlockDomains.Count > 0;
+    public IEnumerable<string> LockedDomainsShown => _filters.LockedBlockDomains.Take(200).ToList();
+    public string LockedDomainsMoreText => _filters.LockedBlockDomains.Count > 200 ? $"…and {_filters.LockedBlockDomains.Count - 200:N0} more" : "";
+
+    private void RaiseManaged()
+    {
+        foreach (var n in new[] { nameof(IsManaged), nameof(ManagedTitle), nameof(ManagedText), nameof(HasLockedDomains), nameof(LockedDomainsShown), nameof(LockedDomainsMoreText) })
+            OnPropertyChanged(n);
+        RefreshGroupCounts();
     }
 
     private void Hook(BlocklistSource b)
@@ -209,7 +234,14 @@ public sealed class DnsTelemetryViewModel : ObservableObject
             if (s is not BlocklistSource list) return;
             if (e.PropertyName == nameof(BlocklistSource.IsEnabled))
             {
+                if (!_filters.IsRestoring && list.IsLocked && !list.IsEnabled)
+                {
+                    list.IsEnabled = true;   // set by the server admin
+                    _shell.ShowSnackbar($"Set by admin: {list.Name} stays on for your network");
+                    return;
+                }
                 if (!_filters.IsRestoring) _ = _engine.SetBlocklistEnabledAsync(list, list.IsEnabled);
+                _filters.NotifyLocalListChange();
                 OnPropertyChanged(nameof(ActiveEntriesText));
                 RefreshGroupCounts();
             }

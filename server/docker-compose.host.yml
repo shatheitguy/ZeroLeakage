@@ -1,0 +1,26 @@
+# Host-networking variant (Linux): the server sees real client IPs, can read the ARP table for MAC
+# addresses / vendors, and binds port 53 on the LAN IP directly.
+#   docker compose -f docker-compose.host.yml up -d
+# Make sure nothing else listens on port 53 (e.g. systemd-resolved: set DNSStubListener=no).
+services:
+  zeroleakage:
+    build: .
+    image: ghcr.io/shatheitguy/zeroleakage-server:latest
+    container_name: zeroleakage
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./data:/data
+    environment:
+      ZL_DNS_ADDR: ":53"
+      ZL_HTTP_ADDR: ":3080"
+      ZL_HTTPS_ADDR: ":8443"   # avoid clashing with another web server on the host
+      ZL_DOT_ADDR: ":853"
+      ZL_TRUST_PROXY: "false"
+      TZ: Asia/Dubai            # schedules use this time zone
+    healthcheck:
+      test: ["CMD", "zeroleakage-server", "-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3

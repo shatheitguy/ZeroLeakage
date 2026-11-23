@@ -72,7 +72,62 @@ CREATE TABLE IF NOT EXISTS querylog (
   rcode TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS querylog_ts ON querylog(ts);
+CREATE TABLE IF NOT EXISTS pair_codes (
+  code_hash TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL DEFAULT '',
+  scope TEXT NOT NULL DEFAULT 'user',
+  expires_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS clients (
+  ip TEXT PRIMARY KEY,
+  first_seen INTEGER NOT NULL,
+  last_seen INTEGER NOT NULL,
+  queries INTEGER NOT NULL DEFAULT 0,
+  proto TEXT NOT NULL DEFAULT '',
+  hostname TEXT NOT NULL DEFAULT '',
+  mac TEXT NOT NULL DEFAULT '',
+  vendor TEXT NOT NULL DEFAULT '',
+  ptr_checked INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS guard_decisions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ip TEXT NOT NULL,
+  scenario TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT '',
+  origin TEXT NOT NULL DEFAULT 'auto',
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL DEFAULT 0,
+  revoked INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS guard_alerts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL,
+  ip TEXT NOT NULL,
+  device_id TEXT NOT NULL DEFAULT '',
+  scenario TEXT NOT NULL,
+  message TEXT NOT NULL,
+  action TEXT NOT NULL DEFAULT 'alert'
+);
+CREATE INDEX IF NOT EXISTS guard_alerts_ts ON guard_alerts(ts);
+CREATE TABLE IF NOT EXISTS guard_bouncers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  key_hash TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL,
+  last_used INTEGER NOT NULL DEFAULT 0,
+  last_ip TEXT NOT NULL DEFAULT ''
+);
 `
+
+// columns added after the first release (ALTER TABLE ... ADD COLUMN when missing)
+var migrations = []struct{ table, column, def string }{
+	{"users", "disabled", "INTEGER NOT NULL DEFAULT 0"},
+	{"devices", "platform", "TEXT NOT NULL DEFAULT ''"},
+	{"devices", "sync_scope", "TEXT NOT NULL DEFAULT 'user'"},
+	{"querylog", "service", "TEXT NOT NULL DEFAULT ''"},
+	{"querylog", "category", "TEXT NOT NULL DEFAULT ''"},
+}
 
 // Open opens (and migrates) dataDir/zeroleakage.db.
 func Open(dataDir string) (*Store, error) {
@@ -85,7 +140,16 @@ func Open(dataDir string) (*Store, error) {
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
-	return &Store{db}, nil
+	st := &Store{db}
+	for _, m := range migrations {
+		if err := st.addColumn(m.table, m.column, m.def); err != nil {
+			return nil, fmt.Errorf("migrate %s.%s: %w", m.table, m.column, err)
+		}
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS querylog_dev_ts ON querylog(device_id, ts)`); err != nil {
+		return nil, err
+	}
+	return st, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -95,17 +159,23 @@ func (s *Store) Close() error { return s.db.Close() }
 // Settings is the server-wide configuration (stored as JSON).
 type Settings struct {
 	EnabledLists   []string `json:"enabledLists"`
-	Upstream       string   `json:"upstream"`       // resolver id or custom https URL
-	PlainFallback  []string `json:"plainFallback"`  // e.g. ["192.168.1.1:53"]
-	BlockMode      string   `json:"blockMode"`      // "nxdomain" | "null_ip"
-	AllowSignup    bool     `json:"allowSignup"`    // let people create accounts on the dashboard
-	RetentionDays  int      `json:"retentionDays"`  // query log
+	Upstream       string   `json:"upstream"`      // resolver id or custom https URL
+	PlainFallback  []string `json:"plainFallback"` // e.g. ["192.168.1.1:53"]
+	BlockMode      string   `json:"blockMode"`     // "nxdomain" | "null_ip"
+	AllowSignup    bool     `json:"allowSignup"`   // let people create accounts on the dashboard
+	RetentionDays  int      `json:"retentionDays"` // query log
 	LogQueries     bool     `json:"logQueries"`
 	PublicHostname string   `json:"publicHostname"` // e.g. dns.example.com (for DoH/DoT links)
+	// BlockBypass stops clients going around the filter (public DoH/DoT resolvers, iCloud Private Relay):
+	// "lan" (default, LAN clients only), "all" or "off".
+	BlockBypass string `json:"blockBypass"`
+	// LocalPTRResolver is the LAN resolver asked for client host names (e.g. the router "192.168.1.1:53").
+	// Only private client addresses are ever looked up, and only there.
+	LocalPTRResolver string `json:"localPTRResolver"`
 }
 
 func DefaultSettings(lists []string) Settings {
-	return Settings{EnabledLists: lists, Upstream: "cloudflare", BlockMode: "nxdomain", RetentionDays: 7, LogQueries: true}
+	return Settings{EnabledLists: lists, Upstream: "cloudflare", BlockMode: "nxdomain", RetentionDays: 7, LogQueries: true, BlockBypass: "lan"}
 }
 
 func (s *Store) GetSettings(def Settings) (Settings, error) {
@@ -133,11 +203,13 @@ func (s *Store) PutSettings(v Settings) error {
 // ───────────────────────── users & sessions ─────────────────────────
 
 type User struct {
-	ID        int64  `json:"id"`
-	Username  string `json:"username"`
-	IsAdmin   bool   `json:"isAdmin"`
-	CreatedAt int64  `json:"createdAt"`
-	passHash  string
+	ID          int64  `json:"id"`
+	Username    string `json:"username"`
+	IsAdmin     bool   `json:"isAdmin"`
+	Disabled    bool   `json:"disabled"`
+	CreatedAt   int64  `json:"createdAt"`
+	DeviceCount int    `json:"deviceCount"`
+	passHash    string
 }
 
 func (u User) PassHash() string { return u.passHash }
@@ -162,20 +234,24 @@ func (s *Store) CreateUser(username, passHash string, admin bool) (User, error) 
 
 func (s *Store) scanUser(row *sql.Row) (User, error) {
 	var u User
-	err := row.Scan(&u.ID, &u.Username, &u.passHash, &u.IsAdmin, &u.CreatedAt)
+	err := row.Scan(&u.ID, &u.Username, &u.passHash, &u.IsAdmin, &u.CreatedAt, &u.Disabled)
 	return u, err
 }
 
+const userCols = `id,username,pass_hash,is_admin,created_at,disabled`
+
 func (s *Store) UserByName(name string) (User, error) {
-	return s.scanUser(s.db.QueryRow(`SELECT id,username,pass_hash,is_admin,created_at FROM users WHERE username=?`, name))
+	return s.scanUser(s.db.QueryRow(`SELECT `+userCols+` FROM users WHERE username=?`, name))
 }
 
 func (s *Store) UserByID(id int64) (User, error) {
-	return s.scanUser(s.db.QueryRow(`SELECT id,username,pass_hash,is_admin,created_at FROM users WHERE id=?`, id))
+	return s.scanUser(s.db.QueryRow(`SELECT `+userCols+` FROM users WHERE id=?`, id))
 }
 
+// Users lists every account with how many devices it owns.
 func (s *Store) Users() ([]User, error) {
-	rows, err := s.db.Query(`SELECT id,username,is_admin,created_at FROM users ORDER BY id`)
+	rows, err := s.db.Query(`SELECT u.id,u.username,u.is_admin,u.created_at,u.disabled,(SELECT COUNT(*) FROM devices d WHERE d.user_id=u.id)
+		FROM users u ORDER BY u.id`)
 	if err != nil {
 		return nil, err
 	}
@@ -183,12 +259,63 @@ func (s *Store) Users() ([]User, error) {
 	var out []User
 	for rows.Next() {
 		var u User
-		if err := rows.Scan(&u.ID, &u.Username, &u.IsAdmin, &u.CreatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.IsAdmin, &u.CreatedAt, &u.Disabled, &u.DeviceCount); err != nil {
 			return nil, err
 		}
 		out = append(out, u)
 	}
 	return out, rows.Err()
+}
+
+// AdminCount is the number of enabled admins.
+func (s *Store) AdminCount() (int, error) {
+	var n int
+	return n, s.db.QueryRow(`SELECT COUNT(*) FROM users WHERE is_admin=1 AND disabled=0`).Scan(&n)
+}
+
+// SetUserPassword replaces the password hash and signs the user out everywhere.
+func (s *Store) SetUserPassword(id int64, passHash string) error {
+	if _, err := s.db.Exec(`UPDATE users SET pass_hash=? WHERE id=?`, passHash, id); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`DELETE FROM sessions WHERE user_id=?`, id)
+	return err
+}
+
+// SetUserDisabled turns an account off (sessions end; its device tokens and pairing codes stop working).
+func (s *Store) SetUserDisabled(id int64, disabled bool) error {
+	if _, err := s.db.Exec(`UPDATE users SET disabled=? WHERE id=?`, disabled, id); err != nil {
+		return err
+	}
+	if disabled {
+		_, _ = s.db.Exec(`DELETE FROM sessions WHERE user_id=?`, id)
+		_, _ = s.db.Exec(`DELETE FROM pair_codes WHERE user_id=?`, id)
+	}
+	return nil
+}
+
+// SetUserAdmin changes the role.
+func (s *Store) SetUserAdmin(id int64, admin bool) error {
+	_, err := s.db.Exec(`UPDATE users SET is_admin=? WHERE id=?`, admin, id)
+	return err
+}
+
+// DeleteUser removes a user with their sessions, devices, rules and policies.
+func (s *Store) DeleteUser(id int64) error {
+	devs, err := s.Devices(&id)
+	if err != nil {
+		return err
+	}
+	for _, d := range devs {
+		if err := s.DeleteDevice(d.ID); err != nil {
+			return err
+		}
+	}
+	scope := fmt.Sprintf("user:%d", id)
+	_, _ = s.db.Exec(`DELETE FROM rules WHERE scope=?`, scope)
+	_, _ = s.db.Exec(`DELETE FROM settings WHERE key=?`, "policy:"+scope)
+	_, err = s.db.Exec(`DELETE FROM users WHERE id=?`, id)
+	return err
 }
 
 // NewSession returns a fresh session token (only its hash is stored).
@@ -199,11 +326,13 @@ func (s *Store) NewSession(userID int64, ttl time.Duration) (string, error) {
 }
 
 func (s *Store) SessionUser(tok string) (User, error) {
-	return s.scanUser(s.db.QueryRow(`SELECT u.id,u.username,u.pass_hash,u.is_admin,u.created_at FROM sessions s JOIN users u ON u.id=s.user_id
-		WHERE s.token_hash=? AND s.expires_at>?`, HashToken(tok), time.Now().Unix()))
+	return s.scanUser(s.db.QueryRow(`SELECT u.id,u.username,u.pass_hash,u.is_admin,u.created_at,u.disabled FROM sessions s JOIN users u ON u.id=s.user_id
+		WHERE s.token_hash=? AND s.expires_at>? AND u.disabled=0`, HashToken(tok), time.Now().Unix()))
 }
 
-func (s *Store) DeleteSession(tok string) { _, _ = s.db.Exec(`DELETE FROM sessions WHERE token_hash=?`, HashToken(tok)) }
+func (s *Store) DeleteSession(tok string) {
+	_, _ = s.db.Exec(`DELETE FROM sessions WHERE token_hash=?`, HashToken(tok))
+}
 
 // ───────────────────────── devices ─────────────────────────
 
@@ -216,16 +345,18 @@ type Device struct {
 	Paused    bool     `json:"paused"`
 	CreatedAt int64    `json:"createdAt"`
 	LastSeen  int64    `json:"lastSeen"`
-	Linked    bool     `json:"linked"` // has an app token
+	Linked    bool     `json:"linked"`              // has an app token
+	Platform  string   `json:"platform,omitempty"`  // android | windows | ... (linked apps)
+	SyncScope string   `json:"syncScope,omitempty"` // "user" (rules shared by the owner's devices) or "device"
 }
 
-const deviceCols = `id,user_id,name,kind,ips,paused,created_at,last_seen,token_hash IS NOT NULL`
+const deviceCols = `d.id,d.user_id,d.name,d.kind,d.ips,d.paused,d.created_at,d.last_seen,d.token_hash IS NOT NULL,d.platform,d.sync_scope`
 
 func scanDevice(sc interface{ Scan(...any) error }) (Device, error) {
 	var d Device
 	var uid sql.NullInt64
 	var ips string
-	if err := sc.Scan(&d.ID, &uid, &d.Name, &d.Kind, &ips, &d.Paused, &d.CreatedAt, &d.LastSeen, &d.Linked); err != nil {
+	if err := sc.Scan(&d.ID, &uid, &d.Name, &d.Kind, &ips, &d.Paused, &d.CreatedAt, &d.LastSeen, &d.Linked, &d.Platform, &d.SyncScope); err != nil {
 		return d, err
 	}
 	if uid.Valid {
@@ -236,13 +367,13 @@ func scanDevice(sc interface{ Scan(...any) error }) (Device, error) {
 }
 
 func (s *Store) Devices(userID *int64) ([]Device, error) {
-	q := `SELECT ` + deviceCols + ` FROM devices`
+	q := `SELECT ` + deviceCols + ` FROM devices d`
 	var args []any
 	if userID != nil {
-		q += ` WHERE user_id=?`
+		q += ` WHERE d.user_id=?`
 		args = append(args, *userID)
 	}
-	rows, err := s.db.Query(q+` ORDER BY created_at`, args...)
+	rows, err := s.db.Query(q+` ORDER BY d.created_at`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -259,14 +390,22 @@ func (s *Store) Devices(userID *int64) ([]Device, error) {
 }
 
 func (s *Store) Device(id string) (Device, error) {
-	return scanDevice(s.db.QueryRow(`SELECT `+deviceCols+` FROM devices WHERE id=?`, id))
+	return scanDevice(s.db.QueryRow(`SELECT `+deviceCols+` FROM devices d WHERE d.id=?`, id))
 }
 
 // CreateDevice makes a device with a fresh short id (used in DoH paths and DoT hostnames).
 func (s *Store) CreateDevice(userID *int64, name, kind string, ips []string) (Device, error) {
-	d := Device{ID: NewDeviceID(), UserID: userID, Name: name, Kind: kind, IPs: ips, CreatedAt: time.Now().Unix()}
-	_, err := s.db.Exec(`INSERT INTO devices(id,user_id,name,kind,ips,created_at) VALUES(?,?,?,?,?,?)`,
-		d.ID, nullable(userID), name, kind, strings.Join(ips, ","), d.CreatedAt)
+	return s.CreateDeviceWith(Device{UserID: userID, Name: name, Kind: kind, IPs: ips})
+}
+
+// CreateDeviceWith creates a device from a template (ID and CreatedAt are assigned).
+func (s *Store) CreateDeviceWith(d Device) (Device, error) {
+	d.ID, d.CreatedAt = NewDeviceID(), time.Now().Unix()
+	if d.SyncScope != "device" {
+		d.SyncScope = "user"
+	}
+	_, err := s.db.Exec(`INSERT INTO devices(id,user_id,name,kind,ips,created_at,platform,sync_scope) VALUES(?,?,?,?,?,?,?,?)`,
+		d.ID, nullable(d.UserID), d.Name, d.Kind, strings.Join(d.IPs, ","), d.CreatedAt, d.Platform, d.SyncScope)
 	return d, err
 }
 
@@ -278,6 +417,7 @@ func (s *Store) UpdateDevice(d Device) error {
 func (s *Store) DeleteDevice(id string) error {
 	_, err := s.db.Exec(`DELETE FROM devices WHERE id=?`, id)
 	_, _ = s.db.Exec(`DELETE FROM rules WHERE scope=?`, "device:"+id)
+	_, _ = s.db.Exec(`DELETE FROM settings WHERE key=?`, "policy:device:"+id)
 	return err
 }
 
@@ -295,7 +435,8 @@ func (s *Store) LinkDevice(id string) (string, error) {
 }
 
 func (s *Store) DeviceByToken(tok string) (Device, error) {
-	return scanDevice(s.db.QueryRow(`SELECT `+deviceCols+` FROM devices WHERE token_hash=?`, HashToken(tok)))
+	return scanDevice(s.db.QueryRow(`SELECT `+deviceCols+` FROM devices d LEFT JOIN users u ON u.id=d.user_id
+		WHERE d.token_hash=? AND (d.user_id IS NULL OR u.disabled=0)`, HashToken(tok)))
 }
 
 func (s *Store) TouchDevices(lastSeen map[string]int64) {
@@ -431,6 +572,8 @@ type QueryEntry struct {
 	Upstream  string `json:"upstream"`
 	LatencyMs int64  `json:"latencyMs"`
 	RCode     string `json:"rcode"`
+	Service   string `json:"service,omitempty"`  // service id (blocked or not), e.g. "tiktok"
+	Category  string `json:"category,omitempty"` // category id of a list that lists the domain
 }
 
 func (s *Store) InsertQueries(batch []QueryEntry) error {
@@ -442,13 +585,13 @@ func (s *Store) InsertQueries(batch []QueryEntry) error {
 		return err
 	}
 	defer tx.Rollback()
-	st, err := tx.Prepare(`INSERT INTO querylog(ts,client,device_id,qname,qtype,blocked,reason,list,upstream,latency_ms,rcode) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
+	st, err := tx.Prepare(`INSERT INTO querylog(ts,client,device_id,qname,qtype,blocked,reason,list,upstream,latency_ms,rcode,service,category) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
 	if err != nil {
 		return err
 	}
 	defer st.Close()
 	for _, q := range batch {
-		if _, err := st.Exec(q.TS, q.Client, q.DeviceID, q.QName, q.QType, q.Blocked, q.Reason, q.List, q.Upstream, q.LatencyMs, q.RCode); err != nil {
+		if _, err := st.Exec(q.TS, q.Client, q.DeviceID, q.QName, q.QType, q.Blocked, q.Reason, q.List, q.Upstream, q.LatencyMs, q.RCode, q.Service, q.Category); err != nil {
 			return err
 		}
 	}
@@ -458,6 +601,8 @@ func (s *Store) InsertQueries(batch []QueryEntry) error {
 // QueryFilter narrows the query log.
 type QueryFilter struct {
 	DeviceID string
+	Devices  []string // restrict to these device ids (non-admin users); nil = no restriction
+	Client   string
 	Blocked  *bool
 	Search   string
 	Limit    int
@@ -465,11 +610,18 @@ type QueryFilter struct {
 }
 
 func (s *Store) Queries(f QueryFilter) ([]QueryEntry, error) {
-	q := `SELECT id,ts,client,device_id,qname,qtype,blocked,reason,list,upstream,latency_ms,rcode FROM querylog WHERE 1=1`
+	q := `SELECT id,ts,client,device_id,qname,qtype,blocked,reason,list,upstream,latency_ms,rcode,service,category FROM querylog WHERE 1=1`
 	var args []any
 	if f.DeviceID != "" {
 		q += ` AND device_id=?`
 		args = append(args, f.DeviceID)
+	}
+	if f.Devices != nil {
+		q, args = inList(q, "device_id", f.Devices, args)
+	}
+	if f.Client != "" {
+		q += ` AND client=?`
+		args = append(args, f.Client)
 	}
 	if f.Blocked != nil {
 		q += ` AND blocked=?`
@@ -496,7 +648,7 @@ func (s *Store) Queries(f QueryFilter) ([]QueryEntry, error) {
 	var out []QueryEntry
 	for rows.Next() {
 		var e QueryEntry
-		if err := rows.Scan(&e.ID, &e.TS, &e.Client, &e.DeviceID, &e.QName, &e.QType, &e.Blocked, &e.Reason, &e.List, &e.Upstream, &e.LatencyMs, &e.RCode); err != nil {
+		if err := rows.Scan(&e.ID, &e.TS, &e.Client, &e.DeviceID, &e.QName, &e.QType, &e.Blocked, &e.Reason, &e.List, &e.Upstream, &e.LatencyMs, &e.RCode, &e.Service, &e.Category); err != nil {
 			return nil, err
 		}
 		out = append(out, e)
@@ -525,14 +677,22 @@ type HourCount struct {
 	Blocked int64 `json:"blocked"`
 }
 
-func (s *Store) Stats(since time.Time) (Stats, error) {
+func (s *Store) Stats(since time.Time) (Stats, error) { return s.StatsFor(since, nil) }
+
+// StatsFor is Stats restricted to some devices (nil = everything).
+func (s *Store) StatsFor(since time.Time, devices []string) (Stats, error) {
 	ms := since.UnixMilli()
 	var st Stats
-	if err := s.db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(blocked),0) FROM querylog WHERE ts>=?`, ms).Scan(&st.Total, &st.Blocked); err != nil {
+	where, args := ` ts>=?`, []any{ms}
+	if devices != nil {
+		where, args = inList(where, "device_id", devices, args)
+	}
+	if err := s.db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(blocked),0) FROM querylog WHERE`+where, args...).Scan(&st.Total, &st.Blocked); err != nil {
 		return st, err
 	}
 	top := func(q string) ([]NamedCount, error) {
-		rows, err := s.db.Query(q, ms)
+		q = strings.Replace(q, "WHERE ts>=?", "WHERE"+where, 1)
+		rows, err := s.db.Query(q, args...)
 		if err != nil {
 			return nil, err
 		}
@@ -557,7 +717,7 @@ func (s *Store) Stats(since time.Time) (Stats, error) {
 	if st.TopClients, err = top(`SELECT CASE WHEN device_id<>'' THEN device_id ELSE client END k, COUNT(*) c FROM querylog WHERE ts>=? GROUP BY k ORDER BY c DESC LIMIT 10`); err != nil {
 		return st, err
 	}
-	rows, err := s.db.Query(`SELECT (ts/3600000)*3600000 h, COUNT(*), COALESCE(SUM(blocked),0) FROM querylog WHERE ts>=? GROUP BY h ORDER BY h`, ms)
+	rows, err := s.db.Query(`SELECT (ts/3600000)*3600000 h, COUNT(*), COALESCE(SUM(blocked),0) FROM querylog WHERE`+where+` GROUP BY h ORDER BY h`, args...)
 	if err != nil {
 		return st, err
 	}
@@ -579,6 +739,11 @@ func (s *Store) Prune(retentionDays int) {
 	}
 	_, _ = s.db.Exec(`DELETE FROM querylog WHERE ts<?`, time.Now().AddDate(0, 0, -retentionDays).UnixMilli())
 	_, _ = s.db.Exec(`DELETE FROM sessions WHERE expires_at<?`, time.Now().Unix())
+	_, _ = s.db.Exec(`DELETE FROM pair_codes WHERE expires_at<?`, time.Now().Unix())
+	_, _ = s.db.Exec(`DELETE FROM guard_alerts WHERE ts<?`, time.Now().AddDate(0, 0, -max(retentionDays, 30)).UnixMilli())
+	_, _ = s.db.Exec(`DELETE FROM guard_decisions WHERE (revoked=1 OR (expires_at>0 AND expires_at<?)) AND created_at<?`,
+		time.Now().Unix(), time.Now().AddDate(0, 0, -30).Unix())
+	_, _ = s.db.Exec(`DELETE FROM clients WHERE last_seen<?`, time.Now().AddDate(0, 0, -90).Unix())
 }
 
 // ───────────────────────── helpers ─────────────────────────

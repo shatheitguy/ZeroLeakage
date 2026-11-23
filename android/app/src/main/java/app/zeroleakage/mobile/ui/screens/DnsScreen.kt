@@ -172,11 +172,13 @@ private fun FilterRow(list: FilterList, on: Boolean, st: ListStatus) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(list.name, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = Zl.TextPrimary,
                         maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                    if (list.defaultOn) { Spacer(Modifier.width(6.dp)); Badge("DEFAULT", Zl.Mint) }
+                    val locked = list.id in Filters.lockedLists
+                    if (locked) { Spacer(Modifier.width(6.dp)); Badge("SET BY ADMIN", Zl.Amber) }
+                    else if (list.defaultOn) { Spacer(Modifier.width(6.dp)); Badge("DEFAULT", Zl.Mint) }
                 }
                 Text(list.description, fontSize = 11.5.sp, color = Zl.TextMuted, lineHeight = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            ZlSwitch(on, { Filters.setEnabled(list.id, it) }, Zl.Violet)
+            ZlSwitch(on, { Filters.setEnabled(list.id, it) }, Zl.Violet, enabled = !(on && list.id in Filters.lockedLists))
         }
         Spacer(Modifier.height(4.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {

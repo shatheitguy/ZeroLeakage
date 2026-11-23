@@ -1,5 +1,7 @@
 package app.zeroleakage.mobile.ui.screens
 
+import androidx.compose.runtime.remember
+import app.zeroleakage.mobile.data.AppAdvice
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
@@ -58,7 +60,7 @@ import app.zeroleakage.mobile.ui.theme.Zl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private enum class AppFilter { ALL, KILLED, APPROVED, PINNED }
+private enum class AppFilter { ALL, KILLED, APPROVED }
 
 @Composable
 fun FirewallScreen() {
@@ -84,11 +86,11 @@ fun FirewallScreen() {
                     when (mode) {
                         ProtectionMode.BALANCED -> "Cut any app off Wi-Fi or mobile data instantly. Its lookups are dropped on-device."
                         ProtectionMode.STRICT -> "Strict Guard: apps must be approved (from the Ask-to-Connect prompt or here) before they get online."
-                        ProtectionMode.LOCKDOWN -> "Total Zero-Leak: only ★ pinned apps may reach the internet."
+                        ProtectionMode.LOCKDOWN -> "Total Zero-Leak: only apps you've allowed may reach the internet; the rest are blocked silently."
                     },
                     fontSize = 13.sp, color = Zl.TextSecondary, lineHeight = 18.sp,
                 )
-                if (mode == ProtectionMode.STRICT) {
+                if (mode == ProtectionMode.STRICT || mode == ProtectionMode.LOCKDOWN) {
                     Spacer(Modifier.height(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         SmallAction("Approve popular apps", Zl.Violet) {
@@ -108,8 +110,8 @@ fun FirewallScreen() {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Chip("All", filter == AppFilter.ALL, accent, { filter = AppFilter.ALL })
                     Chip("Killed", filter == AppFilter.KILLED, accent, { filter = AppFilter.KILLED })
-                    Chip("Approved", filter == AppFilter.APPROVED, accent, { filter = AppFilter.APPROVED })
-                    Chip("★ Pinned", filter == AppFilter.PINNED, accent, { filter = AppFilter.PINNED })
+                    Chip("Allowed", filter == AppFilter.APPROVED, accent, { filter = AppFilter.APPROVED })
+
                 }
                 Spacer(Modifier.height(4.dp))
             }
@@ -125,12 +127,17 @@ fun FirewallScreen() {
                     when (filter) {
                         AppFilter.ALL -> true
                         AppFilter.KILLED -> !r.wifi || !r.mobile
-                        AppFilter.APPROVED -> r.approved
-                        AppFilter.PINNED -> r.pinned
+                        AppFilter.APPROVED -> r.isAllowed
                     }
             }
             item {
-                Overline("${shown.size} apps · ${rules.values.count { it.isKilled }} killed", Modifier.padding(start = 4.dp, top = 4.dp))
+                val onceCount = ZeroLeakage.allowedOnceNow.collectAsStateWithLifecycle().value.size
+                Overline(
+                    "${shown.size} apps · ${rules.values.count { it.isAllowed }} allowed by you" +
+                        (if (onceCount > 0) " · $onceCount allowed once" else "") +
+                        " · ${rules.values.count { it.isKilled }} killed",
+                    Modifier.padding(start = 4.dp, top = 4.dp),
+                )
             }
             items(shown, key = { it.packageName }) { app ->
                 AppRow(app, rules[app.packageName] ?: AppRule(app.packageName), mode)
@@ -161,35 +168,33 @@ private fun AppRow(app: InstalledApp, rule: AppRule, mode: ProtectionMode) {
                 Text(app.label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Zl.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(app.packageName, style = Zl.mono.copy(fontSize = 10.5.sp, color = Zl.TextMuted), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Box(
-                Modifier
-                    .size(34.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .clickable { ZeroLeakage.updateRule(app.packageName) { it.copy(pinned = !it.pinned) } },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Filled.Star, "Pin for Total Zero-Leak", tint = if (rule.pinned) Zl.Amber else Zl.BorderStrong)
-            }
+
         }
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (rule.isKilled) Badge("KILLED", Zl.Crimson)
-                if (rule.approved) Badge("APPROVED", Zl.Violet)
-                else if (mode == ProtectionMode.STRICT) Badge("NEEDS APPROVAL", Zl.Amber)
+                val once = app.packageName in ZeroLeakage.allowedOnceNow.collectAsStateWithLifecycle().value
+                if (rule.isAllowed) Badge("✓ ALLOWED BY YOU", Zl.Mint)
+                else if (once) Badge("ALLOWED ONCE", Zl.Violet)
+                else if (mode != ProtectionMode.BALANCED) Badge(if (mode == ProtectionMode.STRICT) "ASKS FIRST" else "BLOCKED", Zl.Amber)
                 if (rule.blocked > 0) Badge("${formatCount(rule.blocked)} BLOCKED", Zl.TextSecondary)
             }
             NetworkToggle("Wi-Fi", rule.wifi) { v -> ZeroLeakage.updateRule(app.packageName) { it.copy(wifi = v) } }
             Spacer(Modifier.width(8.dp))
             NetworkToggle("Mobile", rule.mobile) { v -> ZeroLeakage.updateRule(app.packageName) { it.copy(mobile = v) } }
         }
-        // Every app in this list can be opened, so in Strict Guard each one (even preinstalled Chrome) needs approval.
-        if (mode == ProtectionMode.STRICT) {
+        // Recommendation: is internet needed for this app?
+        val advice = remember(app.packageName) { AppAdvice.forPackage(context, app.packageName) }
+        Spacer(Modifier.height(8.dp))
+        AdviceLine(advice)
+        // Strict Guard and Total Zero-Leak share one "allowed" list.
+        if (mode != ProtectionMode.BALANCED) {
             Spacer(Modifier.height(8.dp))
-            SmallAction(if (rule.approved) "Revoke approval" else "Approve app", if (rule.approved) Zl.TextSecondary else Zl.Violet) {
-                val approve = !rule.approved
-                ZeroLeakage.updateRule(app.packageName) { it.copy(approved = approve) }
-                ZeroLeakage.say(if (approve) "${app.label} approved. It can connect now." else "${app.label} needs approval again")
+            SmallAction(if (rule.isAllowed) "Remove from allowed" else "Allow app", if (rule.isAllowed) Zl.TextSecondary else Zl.Violet) {
+                val allow = !rule.isAllowed
+                ZeroLeakage.updateRule(app.packageName) { it.copy(approved = allow, pinned = false, wifi = if (allow) true else it.wifi, mobile = if (allow) true else it.mobile) }
+                ZeroLeakage.say(if (allow) "${app.label} allowed. It works in Strict Guard and Total Zero-Leak." else "${app.label} is no longer allowed")
             }
         }
     }
@@ -218,4 +223,23 @@ private fun loadLaunchableApps(context: Context): List<InstalledApp> {
             )
         }
         .sortedBy { it.label.lowercase() }
+}
+
+/** "Needed / Recommended / Your call / Not needed" with a one-line reason. */
+@Composable
+fun AdviceLine(advice: AppAdvice.Advice) {
+    val color = adviceColor(advice.level)
+    Row(verticalAlignment = Alignment.Top) {
+        Badge(advice.level.label.uppercase(), color)
+        Spacer(Modifier.width(8.dp))
+        Text(advice.reason, fontSize = 11.5.sp, color = Zl.TextSecondary, lineHeight = 15.sp)
+    }
+}
+
+fun adviceColor(level: AppAdvice.Level) = when (level) {
+    AppAdvice.Level.NEEDED -> Zl.Mint
+    AppAdvice.Level.RECOMMENDED -> Zl.Violet
+    AppAdvice.Level.OPTIONAL -> Zl.Amber
+    AppAdvice.Level.NOT_NEEDED -> Zl.Crimson
+    AppAdvice.Level.NO_INTERNET -> Zl.TextMuted
 }

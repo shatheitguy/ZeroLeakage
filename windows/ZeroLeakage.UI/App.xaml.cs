@@ -18,6 +18,8 @@ public partial class App : Application
     public static ZeroLeakage.UI.Services.Dns.FilterListService Filters { get; private set; } = null!;
     /// <summary>Offline IP-to-country database.</summary>
     public static ZeroLeakage.UI.Services.Dns.GeoIpService GeoIp { get; private set; } = null!;
+    /// <summary>Account &amp; sync with a ZeroLeakage Server (optional; idle when not linked).</summary>
+    public static ZeroLeakage.Shared.Link.SyncService Sync { get; private set; } = null!;
     private TrayIconService? _tray;
     private ConnectToastService? _toasts;
     private MainWindow? _window;
@@ -64,6 +66,10 @@ public partial class App : Application
         // Swap SimulatedProtectionEngine for the ZeroLeakage Core service client when it is available.
         Filters = new ZeroLeakage.UI.Services.Dns.FilterListService();
         GeoIp = new ZeroLeakage.UI.Services.Dns.GeoIpService();
+        Sync = new ZeroLeakage.Shared.Link.SyncService(new ZeroLeakage.Shared.Link.ServerApiClient(),
+            new ZeroLeakage.Shared.Link.DpapiLinkStore(ZeroLeakage.Shared.Link.DpapiLinkStore.DefaultPath),
+            new FilterSyncTarget(Filters), new ZeroLeakage.Shared.Link.PipeCoreBridge(CoreServiceClient.IsRunning));
+        Filters.LocalChanged += (_, _) => Sync.NotifyLocalChange();
         _engine = new SimulatedProtectionEngine(Filters);
         _engine.SetModeAsync(settings.Mode);
 
@@ -84,6 +90,7 @@ public partial class App : Application
 
         _engine.Start();
         _ = Filters.StartAsync();
+        if (!selfTest) Sync.Start();   // syncs only when this PC is linked
         DefenderService.StartBackgroundRefresh();
         if (!selfTest) shell.Updates.StartAutoCheck();
 
@@ -247,6 +254,31 @@ public partial class App : Application
         File.AppendAllText(log,
             $"[{DateTime.Now:O}] definitions version='{shell.DeepScan.SignatureVersionText}' age='{shell.DeepScan.SignatureAgeText}' " +
             $"canUpdate={shell.DeepScan.UpdateDefinitionsCommand.CanExecute(null)} (not run in self-test){Environment.NewLine}");
+        // Guard page: real status from the ZeroLeakage Core service, or a clear "not running" state (never fake data).
+        shell.SelectedNav = shell.NavItems.First(n => n.Page == shell.Guard);
+        await shell.Guard.RefreshAsync();
+        await Wait(1500);
+        var guard = shell.Guard;
+        File.AppendAllText(log,
+            $"[{DateTime.Now:O}] guard service={guard.ServiceState} connected={guard.IsConnected} state=\"{guard.ServiceStateText}\" " +
+            $"banner=\"{(guard.IsUnavailable ? guard.UnavailableTitle : "-")}\" controlsEnabled={guard.IsConnected} feeds={guard.Feeds.Count} " +
+            $"bans={guard.Bans.Count} alerts={guard.Alerts.Count} blocked={guard.BlockedCountText} rules={guard.FirewallRulesText} " +
+            $"dashboard=\"{guard.DashboardText}\"{Environment.NewLine}");
+        if (!guard.IsConnected && (guard.Feeds.Count + guard.Scenarios.Count + guard.Bans.Count + guard.Alerts.Count > 0 || guard.BlockedCountText != "—"))
+            Interlocked.Increment(ref _errorCount);   // data shown without a service = fake
+
+        // Account & sync dialog (read-only look; never links or changes anything in the self-test)
+        shell.Account.OpenCommand.Execute(null);
+        await Wait(1200);
+        File.AppendAllText(log,
+            $"[{DateTime.Now:O}] account open={shell.Account.IsOpen} linked={shell.Account.IsLinked} profile=\"{shell.Account.ProfileTitle} / {shell.Account.ProfileSubtitle}\" " +
+            $"canLink={shell.Account.LinkCommand.CanExecute(null)} canSync={shell.Account.SyncNowCommand.CanExecute(null)} " +
+            $"managedDns={Filters.IsManaged}{Environment.NewLine}");
+        bool accountOpened = shell.Account.IsOpen;
+        shell.Account.CloseCommand.Execute(null);
+        await Wait(500);
+        if (!accountOpened || shell.Account.IsOpen) Interlocked.Increment(ref _errorCount);
+
         shell.SelectedNav = shell.NavItems[0];
         if (!menuShown || !aboutOpen || shell.About.IsOpen) Interlocked.Increment(ref _errorCount);
 
@@ -292,6 +324,7 @@ public partial class App : Application
         _toasts?.Dispose();
         _tray?.Dispose();
         _engine?.Dispose();
+        Sync?.Dispose();
         _singleInstance?.ReleaseMutex();
         Shutdown();
     }

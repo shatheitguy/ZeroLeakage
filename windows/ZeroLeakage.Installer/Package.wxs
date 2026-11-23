@@ -8,6 +8,8 @@
            Scope="perMachine"
            Compressed="yes">
 
+    <!-- Upgrades remove the old version first (its ServiceControl stops and deletes the service),
+         then the new version installs and starts it again. Guard's firewall rules are kept across upgrades. -->
     <MajorUpgrade DowngradeErrorMessage="A newer version of ZeroLeakage is already installed." />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
@@ -16,13 +18,25 @@
     <Property Id="ARPHELPLINK" Value="https://zeroleakage.app" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="ZeroLeakage" />
+      <Directory Id="INSTALLFOLDER" Name="ZeroLeakage">
+        <Directory Id="COREFOLDER" Name="Core" />
+      </Directory>
     </StandardDirectory>
 
     <Feature Id="Main" Title="ZeroLeakage" Level="1" AllowAbsent="no">
       <ComponentGroupRef Id="AppFiles" />
+      <ComponentGroupRef Id="CoreFiles" />
       <ComponentRef Id="StartMenuShortcut" />
     </Feature>
+
+    <!-- Full uninstall only (not an upgrade): the service, already stopped, removes every "ZeroLeakage Guard"
+         firewall rule, restores Windows DNS if it had switched it, and deletes its ProgramData folder.
+         Deferred + no impersonation = runs as LocalSystem. Failures never block the uninstall. -->
+    <CustomAction Id="GuardCleanup" FileRef="CoreServiceExeFile" ExeCommand="--cleanup"
+                  Execute="deferred" Impersonate="no" Return="ignore" />
+    <InstallExecuteSequence>
+      <Custom Action="GuardCleanup" After="StopServices" Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
 
     <!-- Classic install-directory wizard; dark-themed app takes over after first launch. -->
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
@@ -41,10 +55,31 @@
     </UI>
   </Package>
 
-  <!-- Every file from the self-contained `dotnet publish` output. -->
+  <!-- Every file from the self-contained `dotnet publish` of the desktop app (the Core\ service folder is separate). -->
   <Fragment>
     <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
-      <Files Include="$(var.AppPublishDir)\**" />
+      <Files Include="$(var.AppPublishDir)\**">
+        <Exclude Files="$(var.AppPublishDir)\Core\**" />
+      </Files>
+    </ComponentGroup>
+  </Fragment>
+
+  <!-- ZeroLeakage Core: Windows service (LocalSystem, automatic start) that runs Guard. -->
+  <Fragment>
+    <ComponentGroup Id="CoreFiles" Directory="COREFOLDER">
+      <Files Include="$(var.AppPublishDir)\Core\**">
+        <Exclude Files="$(var.AppPublishDir)\Core\ZeroLeakage.Core.exe" />
+      </Files>
+      <Component Id="CoreServiceExe" Guid="5E0C2B6A-1F4D-4C8E-9B57-3A2D7C9E41F0">
+        <File Id="CoreServiceExeFile" Source="$(var.AppPublishDir)\Core\ZeroLeakage.Core.exe" KeyPath="yes" />
+        <ServiceInstall Id="CoreServiceInstall"
+                        Name="ZeroLeakageCore"
+                        DisplayName="ZeroLeakage Core"
+                        Description="ZeroLeakage Guard: blocks known-malicious IPs and brute-force attackers with Windows Firewall rules. Everything stays on this PC."
+                        Type="ownProcess" Start="auto" ErrorControl="normal" Account="LocalSystem" Vital="yes" />
+        <!-- Start on install; stop on install (upgrades/repairs) and uninstall; remove on uninstall. -->
+        <ServiceControl Id="CoreServiceControl" Name="ZeroLeakageCore" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+      </Component>
     </ComponentGroup>
   </Fragment>
 

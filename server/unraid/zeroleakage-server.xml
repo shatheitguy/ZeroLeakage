@@ -9,9 +9,9 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/shatheitguy/ZeroLeakage/issues</Support>
   <Project>https://github.com/shatheitguy/ZeroLeakage</Project>
-  <Overview>ZeroLeakage Server: network-wide DNS filtering (AdGuard Home / Pi-hole style) for every device on your LAN, plus encrypted DoH / DoT so your phones and laptops stay protected on mobile data. AdGuard-style lists (OISD, HaGeZi, StevenBlack...), per-device rules, CNAME-cloaking protection, query log and an optional sign-in that syncs rules with the ZeroLeakage Windows and Android apps.&#xD;
+  <Overview>ZeroLeakage Server: a privacy-first network protector for every device on your LAN, plus encrypted DoH / DoT so phones and laptops stay protected on mobile data. AdGuard-style filter lists (OISD, HaGeZi, StevenBlack...), one-click blocked services (TikTok, YouTube, Roblox...), web categories, SafeSearch, schedules (bedtime, homework), local DNS records, filtering-bypass blocking, automatic client discovery and Guard: a local CrowdSec-style engine with threat-IP feeds, attack detection, bans/quarantine and a firewall blocklist export. All intelligence runs locally; nothing is reported anywhere. Optional multi-user sign-in syncs policy with the ZeroLeakage Windows and Android apps.&#xD;
 &#xD;
-Give it its own IP (br0) so it can use port 53, then set your router's DNS server to that IP. Open the WebUI to create the admin account.</Overview>
+Give it its own IP (br0) so it can use port 53 and see each client's real address, then set your router's DNS server to that IP. Open the WebUI to create the admin account.</Overview>
   <Category>Network:DNS Security:</Category>
   <WebUI>http://[IP]:[PORT:3080]/</WebUI>
   <Icon>https://raw.githubusercontent.com/shatheitguy/ZeroLeakage/main/docs/assets/logo-512.png</Icon>
@@ -23,5 +23,6 @@ Give it its own IP (br0) so it can use port 53, then set your router's DNS serve
   <Config Name="DNS-over-TLS" Target="853" Default="853" Mode="tcp" Description="Android Private DNS / DoT (needs tls.crt + tls.key in /data)" Type="Port" Display="always" Required="false">853</Config>
   <Config Name="HTTPS" Target="443" Default="8443" Mode="tcp" Description="DoH + dashboard over HTTPS (needs tls.crt + tls.key in /data)" Type="Port" Display="always" Required="false">8443</Config>
   <Config Name="Trust reverse proxy" Target="ZL_TRUST_PROXY" Default="false" Mode="" Description="true only if your own reverse proxy sets X-Forwarded-For" Type="Variable" Display="advanced" Required="false">false</Config>
-  <Config Name="TZ" Target="TZ" Default="Asia/Dubai" Mode="" Description="Time zone for the query log" Type="Variable" Display="advanced" Required="false">Asia/Dubai</Config>
+  <Config Name="Debug logging" Target="ZL_DEBUG" Default="false" Mode="" Description="true for verbose logs" Type="Variable" Display="advanced" Required="false">false</Config>
+  <Config Name="TZ" Target="TZ" Default="Asia/Dubai" Mode="" Description="Time zone for schedules and the query log" Type="Variable" Display="advanced" Required="false">Asia/Dubai</Config>
 </Container>

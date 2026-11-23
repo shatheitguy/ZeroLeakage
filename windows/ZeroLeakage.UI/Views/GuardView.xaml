@@ -1,0 +1,288 @@
+<UserControl x:Class="ZeroLeakage.UI.Views.GuardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:ZeroLeakage.UI.ViewModels">
+    <UserControl.Resources>
+        <Style x:Key="SectionTitle" TargetType="TextBlock" BasedOn="{StaticResource Text.Overline}">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="{StaticResource Brush.TextPrimary}" />
+        </Style>
+
+        <!-- feed / scenario row -->
+        <DataTemplate x:Key="ToggleRow" DataType="{x:Type vm:GuardFeedItem}">
+            <Border Style="{StaticResource Card.Inset}" Margin="0,0,0,8" Padding="12,10">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock FontSize="13" FontWeight="SemiBold" Text="{Binding Name}" />
+                        <TextBlock Margin="0,2,0,0" Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Text="{Binding Description}" />
+                        <TextBlock x:Name="St" Margin="0,5,0,0" Style="{StaticResource Text.Mono}" FontSize="10.5" Foreground="{StaticResource Brush.TextSecondary}"
+                                   Text="{Binding StatusText}" TextWrapping="Wrap" />
+                        <TextBlock Margin="0,2,0,0" Style="{StaticResource Text.Mono}" FontSize="10.5" Foreground="{StaticResource Brush.Amber}"
+                                   Text="{Binding Error, StringFormat=! {0}}" TextWrapping="Wrap"
+                                   Visibility="{Binding Error, Converter={StaticResource NotNullToVisible}}" />
+                    </StackPanel>
+                    <ToggleButton Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Top" Style="{StaticResource Toggle.Switch}"
+                                  IsChecked="{Binding IsEnabled}" ToolTip="{Binding Name}"
+                                  IsEnabled="{Binding DataContext.IsConnected, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+                </Grid>
+            </Border>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid Margin="8,10,24,22">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="14" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="14" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Style="{StaticResource Text.Title}" Text="Guard" />
+                    <Border Margin="12,0,0,0" Style="{StaticResource Badge}" Background="{StaticResource Brush.VioletSoft}" BorderBrush="{StaticResource Brush.VioletLine}"
+                            Visibility="{Binding IsPolicyManaged, Converter={StaticResource BoolToVisible}}">
+                        <TextBlock Style="{StaticResource Badge.Text}" Foreground="{StaticResource Brush.Violet}" Text="{Binding ManagedBadge}" />
+                    </Border>
+                </StackPanel>
+                <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Body}"
+                           Text="Blocks known-malicious IPs (public threat feeds, no account) and bans brute-forcers, using real Windows Firewall rules. Your LAN, this PC and its gateway are never blocked." />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom">
+                <Button Style="{StaticResource Button.Outline}" Margin="0,0,14,0" Command="{Binding UpdateFeedsCommand}" ToolTip="Download every enabled threat feed now">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Style="{StaticResource Text.Icon}" FontSize="12" Text="&#xE72C;" />
+                        <TextBlock Margin="8,0,0,0" Text="Update feeds now" />
+                    </StackPanel>
+                </Button>
+                <TextBlock VerticalAlignment="Center" Margin="0,0,10,0" Style="{StaticResource Text.Caption}" Text="Guard" />
+                <ToggleButton Style="{StaticResource Toggle.Switch}" IsChecked="{Binding GuardEnabled}" IsEnabled="{Binding CanToggleGuard}"
+                              ToolTip="Turn Guard on or off (off removes all of its firewall rules)" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Service not installed / not running -->
+        <Border Grid.Row="1" Margin="0,14,0,0" Style="{StaticResource Card}" Padding="16,14" BorderBrush="{StaticResource Brush.AmberLine}"
+                Visibility="{Binding IsUnavailable, Converter={StaticResource BoolToVisible}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Grid Width="34" Height="34" VerticalAlignment="Top">
+                    <Border CornerRadius="10" Background="{StaticResource Brush.AmberSoft}" />
+                    <TextBlock Style="{StaticResource Text.Icon}" Text="&#xE7BA;" Foreground="{StaticResource Brush.Amber}" />
+                </Grid>
+                <StackPanel Grid.Column="1" Margin="12,0">
+                    <TextBlock FontSize="13.5" FontWeight="SemiBold" Text="{Binding UnavailableTitle}" />
+                    <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Body}" FontSize="12" Text="{Binding UnavailableText}" />
+                </StackPanel>
+                <Button Grid.Column="2" VerticalAlignment="Top" Style="{StaticResource Button.Chip}" Content="Check again" Command="{Binding RefreshCommand}" />
+            </Grid>
+        </Border>
+
+        <!-- Status -->
+        <UniformGrid Grid.Row="3" Columns="4">
+            <UniformGrid.Resources>
+                <Style TargetType="Border" BasedOn="{StaticResource Card.Inset}" />
+            </UniformGrid.Resources>
+            <Border Margin="0,0,6,0">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource Text.Overline}" Text="CORE SERVICE" />
+                    <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Mono}" FontSize="16" FontWeight="SemiBold" Text="{Binding ServiceStateText}" />
+                    <TextBlock Style="{StaticResource Text.Caption}" Text="ZeroLeakageCore · LocalSystem" />
+                </StackPanel>
+            </Border>
+            <Border Margin="6,0">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource Text.Overline}" Text="LAST FEED UPDATE" />
+                    <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Mono}" FontSize="16" FontWeight="SemiBold" Text="{Binding LastFeedUpdateText}" />
+                    <TextBlock Style="{StaticResource Text.Caption}" Text="refreshed daily" />
+                </StackPanel>
+            </Border>
+            <Border Margin="6,0">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource Text.Overline}" Text="BLOCKED IPS &amp; RANGES" />
+                    <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Mono}" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource Brush.Crimson}"
+                               Text="{Binding BlockedCountText}" />
+                    <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding BlockedAddressesText}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </Border>
+            <Border Margin="6,0,0,0">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource Text.Overline}" Text="FIREWALL RULES" />
+                    <TextBlock Margin="0,4,0,0" Style="{StaticResource Text.Mono}" FontSize="16" FontWeight="SemiBold" Text="{Binding FirewallRulesText}" />
+                    <TextBlock Style="{StaticResource Text.Caption}" Text="group &quot;ZeroLeakage Guard&quot;" />
+                </StackPanel>
+            </Border>
+        </UniformGrid>
+        <TextBlock Grid.Row="4" Margin="2,10,0,0" Style="{StaticResource Text.Caption}" Foreground="{StaticResource Brush.Amber}" TextWrapping="Wrap"
+                   Text="{Binding Warning}" Visibility="{Binding Warning, Converter={StaticResource NotNullToVisible}}" />
+
+        <!-- Body -->
+        <Grid Grid.Row="6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1*" />
+                <ColumnDefinition Width="14" />
+                <ColumnDefinition Width="1.1*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Left: feeds, behaviour, server -->
+            <Border Style="{StaticResource Card}" Padding="16,14,8,10">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="0,0,8,0">
+                        <TextBlock Style="{StaticResource SectionTitle}" Text="THREAT FEEDS" />
+                        <TextBlock Margin="0,2,0,10" Style="{StaticResource Text.Caption}" TextWrapping="Wrap"
+                                   Text="Downloaded straight from each project once a day. No account, nothing about you is sent." />
+                        <ItemsControl ItemsSource="{Binding Feeds}" ItemTemplate="{StaticResource ToggleRow}" />
+                        <TextBlock Style="{StaticResource Text.Caption}" Text="Feeds appear here once the ZeroLeakage Core service is running."
+                                   Visibility="{Binding IsUnavailable, Converter={StaticResource BoolToVisible}}" />
+
+                        <TextBlock Margin="0,14,0,10" Style="{StaticResource SectionTitle}" Text="BEHAVIOUR DETECTION" />
+                        <ItemsControl ItemsSource="{Binding Scenarios}" ItemTemplate="{StaticResource ToggleRow}" />
+
+                        <TextBlock Margin="0,14,0,2" Style="{StaticResource SectionTitle}" Text="ZEROLEAKAGE SERVER (OPTIONAL BOUNCER)" />
+                        <TextBlock Margin="0,0,0,8" Style="{StaticResource Text.Caption}" TextWrapping="Wrap" Text="{Binding ServerStatusText}" />
+                        <StackPanel IsEnabled="{Binding CanEditServer}">
+                            <TextBox Style="{StaticResource TextBox.Input}" Tag="https://your-server.example" Text="{Binding ServerUrl, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Margin="2,8,0,4" Style="{StaticResource Text.Caption}" Text="Bouncer API key (stored encrypted by the service, never shown again)" />
+                            <PasswordBox x:Name="KeyBox" Style="{StaticResource PasswordBox.Input}" PasswordChanged="OnKeyChanged" />
+                            <StackPanel Margin="0,8,0,0" Orientation="Horizontal">
+                                <Button Style="{StaticResource Button.Chip}" Content="Save" Margin="0,0,6,0" Command="{Binding SaveServerCommand}" Click="OnSaveClicked" />
+                                <Button Style="{StaticResource Button.Chip.Danger}" Content="Turn off" Command="{Binding ClearServerCommand}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <!-- Right: bans + alerts -->
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="1.2*" />
+                    <RowDefinition Height="14" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Border Style="{StaticResource Card}" Padding="16,14,8,10">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <Grid Margin="0,0,8,10">
+                            <TextBlock Style="{StaticResource SectionTitle}" Text="ACTIVE BANS" VerticalAlignment="Center" />
+                            <TextBlock HorizontalAlignment="Right" Style="{StaticResource Text.Mono}" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"
+                                       Text="{Binding ActiveBansText}" />
+                        </Grid>
+                        <Grid Grid.Row="1" Margin="0,0,8,6" IsEnabled="{Binding IsConnected}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox Style="{StaticResource TextBox.Input}" Tag="IP or CIDR to ban" Text="{Binding BanInput, UpdateSourceTrigger=PropertyChanged}">
+                                <TextBox.InputBindings><KeyBinding Key="Enter" Command="{Binding BanCommand}" /></TextBox.InputBindings>
+                            </TextBox>
+                            <Button Grid.Column="1" Margin="6,0,0,0" Style="{StaticResource Button.Danger}" Content="Ban IP" Command="{Binding BanCommand}" />
+                            <TextBox Grid.Column="3" Style="{StaticResource TextBox.Input}" Tag="IP or CIDR to never block" Text="{Binding AllowInput, UpdateSourceTrigger=PropertyChanged}">
+                                <TextBox.InputBindings><KeyBinding Key="Enter" Command="{Binding AllowCommand}" /></TextBox.InputBindings>
+                            </TextBox>
+                            <Button Grid.Column="4" Margin="6,0,0,0" Style="{StaticResource Button.Mint}" Content="Allow IP" Command="{Binding AllowCommand}" />
+                        </Grid>
+                        <ItemsControl Grid.Row="2" Margin="0,0,8,6" ItemsSource="{Binding Allowlist}">
+                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Style="{StaticResource Badge}" Margin="0,0,6,4" Padding="8,2,2,2">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Style="{StaticResource Badge.Text}" VerticalAlignment="Center" Text="{Binding StringFormat=ALLOW {0}}" />
+                                            <Button Style="{StaticResource Button.Icon}" Width="18" Height="18" FontSize="8" Content="&#xE8BB;" ToolTip="Remove from the allowlist"
+                                                    Command="{Binding DataContext.RemoveAllowCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Grid.Row="3" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource Text.Caption}" Text="No active bans"
+                                   Visibility="{Binding Bans.Count, Converter={StaticResource ZeroToVisible}}" />
+                        <ListBox Grid.Row="3" Style="{StaticResource ListBox.Clean}" ItemsSource="{Binding Bans}" ItemContainerStyle="{StaticResource ListBoxItem.Row}">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:GuardBanItem}">
+                                    <Grid Margin="0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="150" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Style="{StaticResource Text.Mono}" FontWeight="Bold" Foreground="{StaticResource Brush.Crimson}" Text="{Binding Value}" />
+                                            <TextBlock Style="{StaticResource Text.Mono}" FontSize="10" Foreground="{StaticResource Brush.TextMuted}" Text="{Binding ExpiresText}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Margin="8,0" VerticalAlignment="Center">
+                                            <TextBlock FontSize="12" Text="{Binding Reason}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Reason}" />
+                                            <TextBlock Style="{StaticResource Text.Caption}" FontSize="10.5">
+                                                <Run Text="{Binding Scenario, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding CreatedText, Mode=OneWay}" />
+                                            </TextBlock>
+                                        </StackPanel>
+                                        <Button Grid.Column="2" Style="{StaticResource Button.Chip}" Content="Unban" VerticalAlignment="Center"
+                                                Command="{Binding DataContext.UnbanCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Grid>
+                </Border>
+
+                <Border Grid.Row="2" Style="{StaticResource Card}" Padding="16,14,8,10">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Margin="0,0,0,10" Style="{StaticResource SectionTitle}" Text="RECENT ALERTS" />
+                        <TextBlock Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource Text.Caption}" Text="No alerts"
+                                   Visibility="{Binding Alerts.Count, Converter={StaticResource ZeroToVisible}}" />
+                        <ListBox Grid.Row="1" Style="{StaticResource ListBox.Clean}" ItemsSource="{Binding Alerts}" ItemContainerStyle="{StaticResource ListBoxItem.Row}">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:GuardAlertItem}">
+                                    <Grid Margin="0,3">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="92" />
+                                            <ColumnDefinition Width="130" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Style="{StaticResource Text.Mono}" FontSize="11" Foreground="{StaticResource Brush.TextMuted}" Text="{Binding TimeText}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Style="{StaticResource Text.Mono}" FontSize="11.5" Text="{Binding Value}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="2" FontSize="11.5" Foreground="{StaticResource Brush.TextSecondary}" TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center" ToolTip="{Binding Message}">
+                                            <Run Text="{Binding Scenario, Mode=OneWay}" FontWeight="SemiBold" Foreground="{StaticResource Brush.TextPrimary}" /><Run Text=" · " /><Run Text="{Binding Message, Mode=OneWay}" />
+                                        </TextBlock>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>

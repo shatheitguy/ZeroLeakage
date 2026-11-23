@@ -23,8 +23,8 @@ unknown apps off the network, and encrypts every DNS lookup that is allowed thro
 
 | Platform | File | Notes |
 |---|---|---|
-| Windows 10 / 11 (x64) | [`ZeroLeakage-1.3.1-x64.msi`](https://github.com/shatheitguy/ZeroLeakage/releases/download/v1.3.1/ZeroLeakage-1.3.1-x64.msi) | Self-contained: .NET is bundled, nothing else to install. |
-| Android 10+ | [`ZeroLeakage-1.3.1-release.apk`](https://github.com/shatheitguy/ZeroLeakage/releases/download/v1.3.1/ZeroLeakage-1.3.1-release.apk) | Sideload: allow "Install unknown apps" for your browser or file manager. |
+| Windows 10 / 11 (x64) | [`ZeroLeakage-1.4.0-x64.msi`](https://github.com/shatheitguy/ZeroLeakage/releases/download/v1.4.0/ZeroLeakage-1.4.0-x64.msi) | Self-contained: .NET is bundled, nothing else to install. |
+| Android 10+ | [`ZeroLeakage-1.4.0-release.apk`](https://github.com/shatheitguy/ZeroLeakage/releases/download/v1.4.0/ZeroLeakage-1.4.0-release.apk) | Sideload: allow "Install unknown apps" for your browser or file manager. |
 
 ## Three protection modes
 
@@ -45,12 +45,14 @@ A dark-glass WPF desktop app with a frameless window, an animated mode switcher 
 - **DeepScan AV:** two engines. **Microsoft Defender** (built into Windows) is the always-on shield; **ClamAV** (open source, Cisco Talos) is an optional on-demand second opinion, downloaded once, verified against its published SHA-256 and kept up to date daily. Quick, full or folder scans with either or both, a radar scan view, real threat history, and a ZeroLeakage quarantine for ClamAV finds.
 - **Protected reset:** Restore Defaults asks for your Windows Hello PIN, fingerprint or password first.
 - **Snapshots & settings:** restore points, start with Windows (on by default, hidden in the tray), tray behaviour.
-- **Profile menu:** replaces the old CORE indicator: Settings, About (version and system details), *Check for updates* with one-click install, *Update antivirus definitions*, and an optional *Account & sync* slot (coming soon).
+- **Guard (new in 1.4):** a local, CrowdSec-style engine that runs as the *ZeroLeakage Core* Windows service. It bans known-bad IPs from public threat feeds (Spamhaus DROP, FireHOL Level 1, abuse.ch Feodo, Emerging Threats, blocklist.de, CINS Army) in Windows Firewall, and bans addresses that try to brute-force your Windows sign-in or scan your ports. Your own PC, gateway and DNS servers are never banned. Everything stays on this PC: no account, no reporting back.
+- **Account & sync (optional, new in 1.4):** link this PC to your own ZeroLeakage Server with a pairing code or a username and password. Rules, filter lists and policy are copied exactly; your own changes sync to your other devices; anything your admin sets shows as *Set by admin* and can't be weakened. The password is never stored, only an encrypted device token. Unlink restores your previous setup.
+- **Profile menu:** Settings, About (version and system details), *Check for updates* with one-click install, *Update antivirus definitions* and *Account & sync*.
 - **Ask to Connect:** a toast slides in when an unknown app tries to get online in Strict Guard.
 - **Post-install audit:** scores your privacy and applies hardening in one pass (a snapshot is taken first).
 - **Update window:** temporarily opens the network for 15 minutes so updates can run, then locks down again.
 
-> **Status:** the Windows UI is complete and runs on `SimulatedProtectionEngine`, which **does not change the system yet**.
+> **Status:** DeepScan (Defender + ClamAV), Guard (real Windows Firewall bans through the Core service) and Account & sync are real. The firewall-rules, telemetry and DNS screens still run on `SimulatedProtectionEngine`, which **does not change the system yet**.
 > The real back-end plugs in behind [`IProtectionEngine`](windows/ZeroLeakage.UI/Services/IProtectionEngine.cs).
 
 ## Android
@@ -76,7 +78,12 @@ A real on-device DNS firewall built on Android's `VpnService`. Nothing is routed
 - **Strict Guard quick setup:** approve popular apps (Chrome, Google, YouTube, Gmail, WhatsApp…) or all current apps in one tap; only new apps are asked.
 - **What was blocked:** dashboard breakdown of trackers, telemetry, malware/phishing, parental, your rules, app firewall and DNSSEC failures.
 - **Battery-friendly:** encrypted DNS connections are reused (no handshake per lookup), answers are cached for their real lifetime, and storage writes are rare.
-- **Profile menu:** About (version, device and app details), *Check for updates*, and an optional *Account & sync* slot for linking devices to your own ZeroLeakage server (coming soon, never required).
+- **Guard (new in 1.4):** a local threat engine. Answers that point at known malicious IPs are blocked, and it warns you when an app shows signs of infection (DGA-style random domains, DNS tunnelling, bursts of failed lookups), with a one-tap *Cut off app*.
+- **Allowed apps work in every mode:** an app you allowed (or allowed once) also gets online in Total Zero-Leak, and the Firewall tab clearly marks *Allowed by you* and *Allowed once*. Prompts tell you whether an app is needed, recommended, optional or not needed online.
+- **Feed history:** Live, Today, Yesterday and 7 days views, kept only on the phone for 7 days.
+- **Quieter notifications:** you can hide just the "running" notice without silencing ZeroLeakage's other alerts.
+- **Account & sync (optional, new in 1.4):** link the phone to your own ZeroLeakage Server with a pairing code or username and password. Your server's protection is copied exactly, your changes sync to your other devices, and admin settings show as *Set by admin*. Never required.
+- **Profile menu:** About (version, device and app details), *Check for updates* and *Account & sync*.
 
 > Tip: set Android **Private DNS** to *Off* or *Automatic*. A custom Private DNS host bypasses the on-device filter.
 
@@ -94,22 +101,23 @@ A real on-device DNS firewall built on Android's `VpnService`. Nothing is routed
 
 ## ZeroLeakage Server
 
-Self-hosted DNS filtering for your whole network (AdGuard Home / Pi-hole style), with DoH/DoT for phones on mobile data, per-device rules and optional sign-in that syncs rules between your devices. See [server/README.md](server/README.md).
+Self-hosted, network-wide protection in Docker (AdGuard Home / Zenarmor style, DNS level): filter lists, 28 blockable services (TikTok, YouTube, Instagram…), web categories, SafeSearch, schedules, a device list, per-device reports, local DNS records, blocking of encrypted-DNS bypass, and **Guard**, a local CrowdSec-style engine (threat feeds, flood / tunnelling / brute-force detection, bans). The admin manages users; each user links their own Windows and Android apps, which then follow the server exactly. Multi-arch image: `ghcr.io/shatheitguy/zeroleakage-server`. See [server/README.md](server/README.md).
 
 ## Build from source
 
-The two apps are fully independent: separate folders, toolchains and outputs, and no shared code.
+Each part has its own folder, toolchain and output.
 
 ```text
 windows/   .NET 10 · WPF · WiX 5        →  .msi
 android/   Kotlin · Jetpack Compose     →  .apk
+server/    Go · Docker                  →  container image
 docs/      project website (GitHub Pages)
 ```
 
 **Windows** (needs the .NET 10 SDK):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File windows\build-msi.ps1     # -> windows\artifacts\msi\ZeroLeakage-1.3.1-x64.msi
+powershell -ExecutionPolicy Bypass -File windows\build-msi.ps1     # -> windows\artifacts\msi\ZeroLeakage-1.4.0-x64.msi
 dotnet run --project windows\ZeroLeakage.UI                          # run the UI
 ```
 
@@ -117,7 +125,7 @@ dotnet run --project windows\ZeroLeakage.UI                          # run the U
 
 ```powershell
 cd android
-.\gradlew.bat assembleRelease      # -> app\build\outputs\apk\release\ZeroLeakage-1.3.1-release.apk
+.\gradlew.bat assembleRelease      # -> app\build\outputs\apk\release\ZeroLeakage-1.4.0-release.apk
 .\gradlew.bat testDebugUnitTest
 ```
 

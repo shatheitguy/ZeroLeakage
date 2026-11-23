@@ -73,7 +73,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="14" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="14" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -177,6 +177,39 @@
                             Caption="Last scan" SecondaryValue="{Binding LastScanText}"
                             Accent="{StaticResource Brush.Mint}" />
         </Grid>
+
+        <!-- ═══════════════ Guard (ZeroLeakage Core service) ═══════════════ -->
+        <Border Grid.Row="3" Margin="0,14" Style="{StaticResource Card}" Padding="14,9" DataContext="{Binding Shell.Guard}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Grid Width="28" Height="28">
+                    <Border x:Name="GuardTile" CornerRadius="8" Background="{StaticResource Brush.CrimsonSoft}" />
+                    <TextBlock Style="{StaticResource Text.Icon}" FontSize="13" Text="&#xE730;" Foreground="{StaticResource Brush.Crimson}" />
+                </Grid>
+                <TextBlock Grid.Column="1" Margin="10,0,12,0" VerticalAlignment="Center" Style="{StaticResource Text.Overline}" FontSize="11"
+                           Foreground="{StaticResource Brush.TextPrimary}" Text="{Binding DashboardTitle}" />
+                <TextBlock Grid.Column="2" VerticalAlignment="Center" FontSize="11.5" TextTrimming="CharacterEllipsis"
+                           Text="{Binding DashboardText}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Mono}">
+                            <Setter Property="Foreground" Value="{StaticResource Brush.TextSecondary}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsUnavailable}" Value="True">
+                                    <Setter Property="Foreground" Value="{StaticResource Brush.Amber}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+                <Button Grid.Column="3" Margin="10,0,0,0" Style="{StaticResource Button.Chip}" Content="Open Guard"
+                        Command="{Binding DataContext.Shell.OpenGuardCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+            </Grid>
+        </Border>
 
         <!-- ═══════════════ Live packet & DNS feed ═══════════════ -->
         <Border Grid.Row="4" Style="{StaticResource Card}" Padding="16,14,10,8">

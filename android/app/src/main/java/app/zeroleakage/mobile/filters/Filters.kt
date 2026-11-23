@@ -92,8 +92,26 @@ object Filters {
     fun match(domain: String): FilterMatch? = index.match(domain)
 
     // ───────────────────────── subscriptions ─────────────────────────
+    /** Lists and blocked domains enforced by your server's admin (linked devices only): can't be weakened here. */
+    @Volatile var lockedLists: Set<String> = emptySet()
+    @Volatile var lockedBlock: Set<String> = emptySet()
+
+    /** True when [domain] (or a parent) is blocked by your server's admin. */
+    fun blockedByAdmin(domain: String): Boolean {
+        var d = domain.lowercase().trimEnd('.')
+        while (true) {
+            if (d in lockedBlock) return true
+            val dot = d.indexOf('.')
+            if (dot < 0 || dot == d.length - 1) return false
+            d = d.substring(dot + 1)
+            if (!d.contains('.')) return false
+        }
+    }
+
     fun setEnabled(id: String, on: Boolean) {
+        if (!on && id in lockedLists) return          // set by your admin
         _enabled.update { if (on) it + id else it - id }
+        onListChange?.invoke()
         prefs.edit().putStringSet("lists", _enabled.value).apply()
         val list = _lists.value.firstOrNull { it.id == id }
         if (on && list != null && !list.isBundled && !fileFor(id).exists()) {
@@ -162,6 +180,7 @@ object Filters {
 
     fun allow(raw: String): String? {
         val d = normalize(raw) ?: return null
+        if (blockedByAdmin(d)) return null           // your admin blocked it; users can't unblock
         _userAllow.update { it + d }
         _userBlock.update { it - d }
         persistUser()
@@ -179,9 +198,43 @@ object Filters {
         scope.launch { enabledMissing().forEach { download(it) } }
     }
 
-    private fun persistUser() {
+    private fun persistUser(notify: Boolean = true) {
         prefs.edit().putStringSet("custom", _userBlock.value).putStringSet("allow", _userAllow.value).apply()
         index = index.withUser(_userAllow.value, _userBlock.value)    // instant, no re-parse
+        if (notify) onUserChange?.invoke()
+    }
+
+    // ───────────────────────── server sync (exact clone) ─────────────────────────
+    /** Called after you edit your own allow / block lists, so a linked device can push the change. */
+    @Volatile var onUserChange: (() -> Unit)? = null
+    /** Called after you switch a filter list on or off. */
+    @Volatile var onListChange: (() -> Unit)? = null
+
+    /** Replaces your allow / block lists with the server's (no push back). */
+    fun replaceUser(allow: Set<String>, block: Set<String>) {
+        _userAllow.value = allow.mapNotNull { normalize(it) }.toSet()
+        _userBlock.value = block.mapNotNull { normalize(it) }.toSet() - _userAllow.value
+        persistUser(notify = false)
+    }
+
+    /** Makes the enabled lists exactly [ids] (ids this app doesn't know are ignored). */
+    fun setEnabledExact(ids: Set<String>) {
+        val known = _lists.value.map { it.id }.toSet()
+        val next = ids.filter { it in known }.toSet()
+        if (next == _enabled.value) return
+        _enabled.value = next
+        prefs.edit().putStringSet("lists", next).apply()
+        scope.launch { enabledMissing().forEach { download(it) } }
+        requestRebuild()
+    }
+
+    /** Makes the custom lists match the server's (by URL); returns the ids they have here. */
+    fun syncCustomLists(lists: List<Pair<String, String>>): Set<String> {
+        val wanted = lists.filter { it.second.startsWith("https://") }
+        val wantedUrls = wanted.map { it.second }.toSet()
+        _lists.value.filter { it.custom && it.url !in wantedUrls }.forEach { removeCustom(it.id) }
+        for ((name, url) in wanted) if (_lists.value.none { it.url == url }) addCustom(url, name)
+        return _lists.value.filter { it.custom && it.url in wantedUrls }.map { it.id }.toSet()
     }
 
     fun normalize(raw: String): String? {
